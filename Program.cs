@@ -99,34 +99,55 @@ namespace BlazorComponentAnalyzer
 
             foreach (var component in componentRelations)
             {
-                string sanitizedParent = SanitizeComponentName(component.Key);
-                bool isNewSubgraph = !processedNodes.Contains(sanitizedParent);
-
-                // If the component has not been processed, start a new subgraph
-                if (isNewSubgraph)
-                {
-                    mermaidStringBuilder.AppendLine($"subgraph {sanitizedParent}_g");
-                    mermaidStringBuilder.AppendLine(sanitizedParent);
-                    processedNodes.Add(sanitizedParent);
-                }
-
-                foreach (var relatedComponent in component.Value)
-                {
-                    string sanitizedChild = SanitizeComponentName(relatedComponent);
-                    mermaidStringBuilder.AppendLine($"{sanitizedParent}--> {sanitizedChild}");
-
-                    // Add the child to the processed nodes so it doesn't start its own subgraph later
-                    processedNodes.Add(sanitizedChild);
-                }
-
-                // Close the subgraph only if it was a new one
-                if (isNewSubgraph)
-                {
-                    mermaidStringBuilder.AppendLine("end");
-                }
+                ProcessComponent(component, processedNodes, mermaidStringBuilder);
             }
 
             return mermaidStringBuilder.ToString();
+        }
+
+        private static void ProcessComponent(KeyValuePair<string, List<string>> component, HashSet<string> processedNodes, StringBuilder mermaidStringBuilder)
+        {
+            string sanitizedParent = SanitizeComponentName(component.Key);
+            bool isNewSubgraph = !processedNodes.Contains(sanitizedParent);
+
+            if (isNewSubgraph)
+            {
+                StartNewSubgraph(sanitizedParent, mermaidStringBuilder, processedNodes);
+            }
+
+            ProcessRelatedComponents(component.Value, sanitizedParent, mermaidStringBuilder, processedNodes);
+
+            if (isNewSubgraph)
+            {
+                CloseSubgraph(mermaidStringBuilder);
+            }
+        }
+
+        private static void StartNewSubgraph(string sanitizedParent, StringBuilder mermaidStringBuilder, HashSet<string> processedNodes)
+        {
+            mermaidStringBuilder.AppendLine($"subgraph {sanitizedParent}_g");
+            mermaidStringBuilder.AppendLine(sanitizedParent);
+            processedNodes.Add(sanitizedParent);
+        }
+
+        private static void ProcessRelatedComponents(List<string> relatedComponents, string sanitizedParent, StringBuilder mermaidStringBuilder, HashSet<string> processedNodes)
+        {
+            foreach (var relatedComponent in relatedComponents)
+            {
+                LinkParentToChild(sanitizedParent, relatedComponent, mermaidStringBuilder, processedNodes);
+            }
+        }
+
+        private static void LinkParentToChild(string sanitizedParent, string relatedComponent, StringBuilder mermaidStringBuilder, HashSet<string> processedNodes)
+        {
+            string sanitizedChild = SanitizeComponentName(relatedComponent);
+            mermaidStringBuilder.AppendLine($"{sanitizedParent}--> {sanitizedChild}");
+            processedNodes.Add(sanitizedChild); // Add the child to the processed nodes
+        }
+
+        private static void CloseSubgraph(StringBuilder mermaidStringBuilder)
+        {
+            mermaidStringBuilder.AppendLine("end");
         }
 
 
