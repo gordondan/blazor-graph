@@ -95,18 +95,39 @@ namespace BlazorComponentAnalyzer
             StringBuilder mermaidStringBuilder = new StringBuilder();
             mermaidStringBuilder.AppendLine("graph TD");  // TD denotes top-down layout
 
+            var processedNodes = new HashSet<string>();
+
             foreach (var component in componentRelations)
             {
                 string sanitizedParent = SanitizeComponentName(component.Key);
+
+                // If the component has not been processed, start a new subgraph
+                if (!processedNodes.Contains(sanitizedParent))
+                {
+                    mermaidStringBuilder.AppendLine($"subgraph {sanitizedParent}_group");
+                    mermaidStringBuilder.AppendLine(sanitizedParent);
+                    processedNodes.Add(sanitizedParent);
+                }
+
                 foreach (var relatedComponent in component.Value)
                 {
                     string sanitizedChild = SanitizeComponentName(relatedComponent);
                     mermaidStringBuilder.AppendLine($"{sanitizedParent}--> {sanitizedChild}");
+
+                    // Add the child to the processed nodes so it doesn't start its own subgraph later
+                    processedNodes.Add(sanitizedChild);
+                }
+
+                // Close the subgraph
+                if (!processedNodes.Contains(sanitizedParent))
+                {
+                    mermaidStringBuilder.AppendLine("end");
                 }
             }
 
             return mermaidStringBuilder.ToString();
         }
+
 
         private static void SaveToMermaidFile(string mermaidContent, string filename = "dependencyGraph.mmd")
         {
