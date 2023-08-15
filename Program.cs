@@ -100,11 +100,12 @@ namespace BlazorComponentAnalyzer
             foreach (var component in componentRelations)
             {
                 string sanitizedParent = SanitizeComponentName(component.Key);
+                bool isNewSubgraph = !processedNodes.Contains(sanitizedParent);
 
                 // If the component has not been processed, start a new subgraph
-                if (!processedNodes.Contains(sanitizedParent))
+                if (isNewSubgraph)
                 {
-                    mermaidStringBuilder.AppendLine($"subgraph {sanitizedParent}_group");
+                    mermaidStringBuilder.AppendLine($"subgraph {sanitizedParent}_g");
                     mermaidStringBuilder.AppendLine(sanitizedParent);
                     processedNodes.Add(sanitizedParent);
                 }
@@ -118,8 +119,8 @@ namespace BlazorComponentAnalyzer
                     processedNodes.Add(sanitizedChild);
                 }
 
-                // Close the subgraph
-                if (!processedNodes.Contains(sanitizedParent))
+                // Close the subgraph only if it was a new one
+                if (isNewSubgraph)
                 {
                     mermaidStringBuilder.AppendLine("end");
                 }
@@ -127,6 +128,7 @@ namespace BlazorComponentAnalyzer
 
             return mermaidStringBuilder.ToString();
         }
+
 
 
         private static void SaveToMermaidFile(string mermaidContent, string filename = "dependencyGraph.mmd")
