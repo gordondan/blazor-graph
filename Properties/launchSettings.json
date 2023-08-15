@@ -2,7 +2,7 @@
   "profiles": {
     "BlazorGraph": {
       "commandName": "Project",
-      "commandLineArgs": "C:\\Users\\gordon\\source\\repos\\LibraryOrientationScheduler\\LibraryOrientationScheduler.Server\\Pages\\Shared\\Components\\OrientationRequestForm\\"
+      "commandLineArgs": "--directory=C:\\Users\\gordon\\source\\repos\\LibraryOrientationScheduler\\LibraryOrientationScheduler.Server\\Pages\\Shared\\Components\\OrientationRequestForm\\ --starting-node=OrientationRequestForm\r\n"
     }
   }
 }

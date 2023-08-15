@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Options;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -12,7 +14,20 @@ namespace BlazorComponentAnalyzer
     {
         static void Main(string[] args)
         {
-            var razorFiles = GetRazorFiles(args);
+            var configurationBuilder = new ConfigurationBuilder()
+                .AddCommandLine(args);
+
+            var configuration = configurationBuilder.Build();
+
+            string directory = configuration["directory"];
+            string node = configuration["starting-node"];
+
+            Run(directory, node);
+        }
+
+        static void Run(string directory, string node)
+        {
+            var razorFiles = GetRazorFiles(directory);
             var componentRelations = new Dictionary<string, List<string>>();
 
             foreach (var razorFilePath in razorFiles)
@@ -25,11 +40,26 @@ namespace BlazorComponentAnalyzer
 
                 componentRelations[currentComponent] = components;
             }
+            componentRelations = SortDictionary(componentRelations,node);
 
             var mermaidGraph = GenerateMermaidGraph(componentRelations);
             SaveToMermaidFile(mermaidGraph);
 
             Console.WriteLine("Mermaid dependency graph generated in 'blazorDependencyGraph.mmd'.");
+        }
+
+        private static Dictionary<string, List<string>> SortDictionary(Dictionary<string, List<string>> componentRelations, string startingNode)
+        {
+            if (componentRelations.ContainsKey(startingNode))
+            {
+                var startingNodeRelations = new Dictionary<string, List<string>>
+            {
+                { startingNode, componentRelations[startingNode] }
+            };
+                componentRelations.Remove(startingNode);
+                componentRelations = startingNodeRelations.Concat(componentRelations).ToDictionary(k => k.Key, v => v.Value);
+            }
+            return componentRelations;
         }
 
 
@@ -199,16 +229,11 @@ namespace BlazorComponentAnalyzer
 
             return null;
         }
-        private static IEnumerable<string> GetRazorFiles(string[] args)
+        private static IEnumerable<string> GetRazorFiles(string inputDirectory)
         {
-            string directory;
+            string directory = inputDirectory;
 
-            // Check if a command-line argument was provided.
-            if (args.Length > 0)
-            {
-                directory = args[0];
-            }
-            else
+            if (string.IsNullOrEmpty(directory))
             {
                 directory = GetCurrentSolutionDirectory();
 
