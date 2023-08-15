@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BlazorComponentAnalyzer
@@ -12,20 +13,25 @@ namespace BlazorComponentAnalyzer
         static void Main(string[] args)
         {
             var razorFiles = GetRazorFiles(args);
+            var componentRelations = new Dictionary<string, List<string>>();
 
             foreach (var razorFilePath in razorFiles)
             {
                 var razorContent = File.ReadAllText(razorFilePath);
                 var components = ExtractBlazorComponents(razorContent);
 
-                Console.WriteLine($"\nFor {razorFilePath}, found {components.Count} component(s):");
+                // Assuming the filename itself (without path or extension) represents the component's name
+                var currentComponent = Path.GetFileNameWithoutExtension(razorFilePath);
 
-                foreach (var component in components)
-                {
-                    Console.WriteLine($"- {component}");
-                }
+                componentRelations[currentComponent] = components;
             }
+
+            var mermaidGraph = GenerateMermaidGraph(componentRelations);
+            SaveToMermaidFile(mermaidGraph);
+
+            Console.WriteLine("Mermaid dependency graph generated in 'blazorDependencyGraph.mmd'.");
         }
+
 
         public static List<string> ExtractBlazorComponents(string razorContent)
         {
@@ -71,12 +77,56 @@ namespace BlazorComponentAnalyzer
 
             return componentNames.ToList();
         }
+        private static string SanitizeComponentName(string componentName)
+        {
+            // List of keywords/tags that might conflict with Mermaid or HTML.
+            var reservedKeywords = new List<string> { "style", "strong", /* ... add others as needed ... */ };
+
+            if (reservedKeywords.Contains(componentName))
+            {
+                return $"tag_{componentName}"; // Prefix with "tag_" or any other suitable prefix.
+            }
+
+            return componentName;
+        }
+
+        private static string GenerateMermaidGraph(Dictionary<string, List<string>> componentRelations)
+        {
+            StringBuilder mermaidStringBuilder = new StringBuilder();
+            mermaidStringBuilder.AppendLine("graph TD");  // TD denotes top-down layout
+
+            foreach (var component in componentRelations)
+            {
+                string sanitizedParent = SanitizeComponentName(component.Key);
+                foreach (var relatedComponent in component.Value)
+                {
+                    string sanitizedChild = SanitizeComponentName(relatedComponent);
+                    mermaidStringBuilder.AppendLine($"{sanitizedParent}--> {sanitizedChild}");
+                }
+            }
+
+            return mermaidStringBuilder.ToString();
+        }
+
+        private static void SaveToMermaidFile(string mermaidContent, string filename = "dependencyGraph.mmd")
+        {
+            File.WriteAllText(filename, mermaidContent);
+        }
+
 
         private static IEnumerable<string> ExtractComponentNamesFromLiteral(string literalValue)
         {
             var matches = Regex.Matches(literalValue, @"<(\w+)(\s|>)");
-            return matches.Cast<Match>().Select(match => match.Groups[1].Value).Where(name => !IsHtmlTag(name));
+            return matches.Cast<Match>().Select(match => match.Groups[1].Value)
+                          .Where(name => !IsHtmlTag(name) && IsValidComponentName(name));
         }
+
+        private static bool IsValidComponentName(string name)
+        {
+            // Example criteria: Component names start with a capital letter
+            return Char.IsUpper(name[0]);
+        }
+
 
         private static bool IsHtmlTag(string tagName)
         {
@@ -84,11 +134,14 @@ namespace BlazorComponentAnalyzer
             var htmlTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "a", "div", "span", "h1", "h2", "h3", "p", "br", "input", "button", "form",
-        "img", "ul", "li", "ol", "table", "thead", "tbody", "tr", "td", "th"
+        "img", "ul", "li", "ol", "table", "thead", "tbody", "tr", "td", "th",
+        "style", "strong", "em", "b", "i", "u", "script", "link"
+        // ... add more HTML tags if needed
     };
 
             return htmlTags.Contains(tagName);
         }
+
 
         private static string GetCurrentSolutionDirectory()
         {
