@@ -3,9 +3,6 @@ using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text.RegularExpressions;
 
 namespace BlazorComponentAnalyzer
@@ -14,28 +11,19 @@ namespace BlazorComponentAnalyzer
     {
         static void Main(string[] args)
         {
-            if (args.Length == 0)
+            var razorFiles = GetRazorFiles(args);
+
+            foreach (var razorFilePath in razorFiles)
             {
-                Console.WriteLine("Please provide the path to the .razor file as an argument.");
-                return;
-            }
+                var razorContent = File.ReadAllText(razorFilePath);
+                var components = ExtractBlazorComponents(razorContent);
 
-            var filePath = args[0];
+                Console.WriteLine($"\nFor {razorFilePath}, found {components.Count} component(s):");
 
-            if (!File.Exists(filePath))
-            {
-                Console.WriteLine($"File '{filePath}' does not exist.");
-                return;
-            }
-
-            var razorContent = File.ReadAllText(filePath);
-            var components = ExtractBlazorComponents(razorContent);
-
-            Console.WriteLine($"Found {components.Count} component(s) in {filePath}:");
-
-            foreach (var component in components)
-            {
-                Console.WriteLine($"- {component}");
+                foreach (var component in components)
+                {
+                    Console.WriteLine($"- {component}");
+                }
             }
         }
 
@@ -102,6 +90,56 @@ namespace BlazorComponentAnalyzer
             return htmlTags.Contains(tagName);
         }
 
+        private static string GetCurrentSolutionDirectory()
+        {
+            var currentDirectory = Directory.GetCurrentDirectory();
+            var solutionFile = Directory.GetFiles(currentDirectory, "*.sln").FirstOrDefault();
+
+            if (solutionFile != null)
+            {
+                return Path.GetDirectoryName(solutionFile);
+            }
+
+            return null;
+        }
+        private static IEnumerable<string> GetRazorFiles(string[] args)
+        {
+            string directory;
+
+            // Check if a command-line argument was provided.
+            if (args.Length > 0)
+            {
+                directory = args[0];
+            }
+            else
+            {
+                directory = GetCurrentSolutionDirectory();
+
+                if (string.IsNullOrEmpty(directory))
+                {
+                    Console.WriteLine("Please provide the directory path where the .razor files are located:");
+                    directory = Console.ReadLine();
+                }
+            }
+
+            if (!Directory.Exists(directory))
+            {
+                Console.WriteLine($"Directory '{directory}' does not exist.");
+                return Enumerable.Empty<string>();
+            }
+
+            var razorFiles = Directory.GetFiles(directory, "*.razor", SearchOption.AllDirectories);
+
+            if (!razorFiles.Any())
+            {
+                Console.WriteLine("No .razor files found.");
+                return Enumerable.Empty<string>();
+            }
+
+            Console.WriteLine($"Found {razorFiles.Length} .razor file(s) in the directory.");
+
+            return razorFiles;
+        }
 
     }
 }
