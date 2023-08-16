@@ -19,6 +19,7 @@ namespace BlazorGraph
         {
             _appSettings = appSettings;
             ComponentGraphProcessor.Configure(_appSettings);
+            _grid = ComponentGraphProcessor.GetNewGrid();
         }
 
         public void GenerateVisioDiagram(Dictionary<string, List<string>> componentRelations)
@@ -135,7 +136,6 @@ namespace BlazorGraph
             Queue<string> nodesToProcess = new Queue<string>();
             nodesToProcess.Enqueue(rootNode);
 
-            _grid = ComponentGraphProcessor.GetNewGrid();
 
             double originalY = currentY;  // Store the original Y value for root node positioning
 
@@ -199,27 +199,6 @@ namespace BlazorGraph
                 currentY = init_y - rowIndex * y_offset;
             }
         }
-        private void UpdatePositionForRootNode(double originalY, bool isRoot)
-        {
-            if (isRoot)
-            {
-                currentY = originalY - y_offset;
-            }
-            else
-            {
-                currentY -= y_offset;
-            }
-        }
-        private void UpdatePositionForStateNode(string nodeName)
-        {
-            if (!nodeName.EndsWith("State") || stateNodes.Contains(nodeName))
-                return;
-
-            stateNodes.Add(nodeName);
-            currentY = init_y - (1.5 * y_offset);  // Two row heights above the root node row
-            currentX = stateNodes.Count > 1 ? x_offset * stateNodes.Count() : x_offset;
-        }
-
 
     }
 }
