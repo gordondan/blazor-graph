@@ -5,7 +5,7 @@ namespace BlazorGraph
 {
     public class VisioDiagramGenerator
     {
-        private const double init_y = 6;
+        private const double init_y = 8;
         private const double margin = 1;
         private double headerHeight = 0.5;
 
@@ -15,8 +15,8 @@ namespace BlazorGraph
         private HashSet<string> processedNodes = new HashSet<string>();
 
         private double x_offset = 2.25;
-        private double y_offset = 3;
-        private double card_height = 2;
+        private double y_offset = 1.25;
+        private double card_height = 1;
         private double card_width = 2;
 
         private List<GraphNode> graphNodes = new List<GraphNode>();
@@ -204,7 +204,7 @@ namespace BlazorGraph
             header.Text = componentName;
 
             // Setting shape rounding for rounded rectangle
-            header.CellsU["Rounding"].ResultIU = 0.1;
+            //header.CellsU["Rounding"].ResultIU = 0.1;
 
             SetShapeColor(header, componentName);
             return header;
@@ -251,7 +251,7 @@ namespace BlazorGraph
             int outgoingDeps = node.RelatedComponents.Count();
             int incomingDeps = 0; // Get from node
 
-            body.Text = $"Component: {node.ComponentName}\nState Dep: {stateDeps}\nOutgoing: {outgoingDeps}\nIncoming: {incomingDeps}";
+            body.Text = $"State Dep: {stateDeps}\nOutgoing: {outgoingDeps}\nIncoming: {incomingDeps}";
         }
 
         private void EnsurePageSize(Page page, double maxX, double maxY)
