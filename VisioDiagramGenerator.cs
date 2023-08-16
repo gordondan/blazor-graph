@@ -6,21 +6,28 @@ namespace BlazorGraph
     public class VisioDiagramGenerator
     {
         private const double init_y = 6;
+        private const double margin = 1;
+        private double headerHeight = 0.5;
+
         private AppSettings _appSettings;
         private List<List<string>> _grid = new List<List<string>>();
 
         private HashSet<string> processedNodes = new HashSet<string>();
-        private HashSet<string> stateNodes = new HashSet<string>();
+
         private double x_offset = 2.25;
-        private double y_offset = -1.25;
+        private double y_offset = 3;
+        private double card_height = 2;
+        private double card_width = 2;
+
         private List<GraphNode> graphNodes = new List<GraphNode>();
         private Dictionary<GraphNode, (double X, double Y)> nodePositions = new Dictionary<GraphNode, (double X, double Y)>();
 
-        public VisioDiagramGenerator(AppSettings appSettings)
+        public VisioDiagramGenerator(AppSettings appSettings, double customHeaderHeight = 0.5)
         {
             _appSettings = appSettings;
             ComponentGraphProcessor.Configure(_appSettings);
             _grid = ComponentGraphProcessor.GetNewGrid();
+            headerHeight = customHeaderHeight;
         }
 
         public void GenerateVisioDiagram(Dictionary<string, List<string>> componentRelations)
@@ -181,50 +188,74 @@ namespace BlazorGraph
 
             Console.WriteLine($"Creating shape for: {componentName} at X: {x}, Y: {y}");
 
-            Shape shape = page.DrawRectangle(x,y, x + 2, y + 1);
-            shape.Text = componentName;
+            Shape header = CreateHeader(page, x, y, componentName);
+            Shape body = CreateBody(page, x, y - headerHeight);  
+            LabelDependencies(body, node);
+
+            // You can group the shapes into one if required
+            // Shape group = page.Group(new Shape[] { header, body });
+            return header;  // or return group if you grouped the shapes
+        }
+
+        private Shape CreateHeader(Page page, double x, double y, string componentName)
+        {
+            Console.WriteLine($"Creating Header ({componentName}): {x} {y} {x+card_width} {y-headerHeight}");
+            Shape header = page.DrawRectangle(x, y, x + card_width, y - headerHeight);  // Using headerHeight for the header
+            header.Text = componentName;
 
             // Setting shape rounding for rounded rectangle
-            shape.CellsU["Rounding"].ResultIU = 0.1;
+            header.CellsU["Rounding"].ResultIU = 0.1;
 
-            // Default to navy blue with white text
-            shape.CellsU["FillForegnd"].FormulaU = "RGB(0, 0, 128)";
-            shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White color for text
+            SetShapeColor(header, componentName);
+            return header;
+        }
 
-            // If it's a vendor component, set to lime green with white text
+        private Shape CreateBody(Page page, double x, double y)
+        {
+            Console.WriteLine($"Creating Body {x} {y} {x + card_width} {y - card_height}");
+            Shape body = page.DrawRectangle(x, y, x + card_width, y - card_height);
+            body.CellsU["FillForegnd"].FormulaU = "RGB(255, 255, 255)"; // White body
+            body.CellsU["Char.Color"].FormulaU = "RGB(0, 0, 0)";  // Black text for body details
+            return body;
+        }
+        private void SetShapeColor(Shape shape, string componentName)
+        {
+            try
             {
-            if (ComponentGraphProcessor.IsVendorComponent(componentName))
-                try
+                if (ComponentGraphProcessor.IsVendorComponent(componentName))
                 {
                     shape.CellsU["FillForegnd"].FormulaU = "RGB(50, 205, 50)";  // Lime green
-                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White color for text
+                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
                 }
-                catch (COMException ex)
-                {
-                    // Handle the error, perhaps logging it or notifying the user
-                    Console.WriteLine($"Error setting color for component {componentName}: {ex.Message}");
-                }
-            }
-            if (ComponentGraphProcessor.IsStateComponent(componentName))
-            {
-                try
+                else if (ComponentGraphProcessor.IsStateComponent(componentName))
                 {
                     shape.CellsU["FillForegnd"].FormulaU = "RGB(255, 165, 0)";  // Orange
-                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White color for text
+                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
                 }
-                catch (COMException ex)
+                else
                 {
-                    // Handle the error
-                    Console.WriteLine($"Error setting color for state component {componentName}: {ex.Message}");
+                    shape.CellsU["FillForegnd"].FormulaU = "RGB(0, 0, 128)"; // Default navy blue
+                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
                 }
             }
-            return shape;
+            catch (COMException ex)
+            {
+                // Handle the error, perhaps logging it or notifying the user
+                Console.WriteLine($"Error setting color for component {componentName}: {ex.Message}");
+            }
+        }
+
+        private void LabelDependencies(Shape body, GraphNode node)
+        {
+            int stateDeps = node.RelatedComponents.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count();
+            int outgoingDeps = node.RelatedComponents.Count();
+            int incomingDeps = 0; // Get from node
+
+            body.Text = $"Component: {node.ComponentName}\nState Dep: {stateDeps}\nOutgoing: {outgoingDeps}\nIncoming: {incomingDeps}";
         }
 
         private void EnsurePageSize(Page page, double maxX, double maxY)
         {
-            const double margin = 1; // some space on all sides
-
             // Ensure height
             if (maxY + margin > page.PageSheet.CellsU["PageHeight"].ResultIU)
             {
@@ -232,13 +263,11 @@ namespace BlazorGraph
             }
 
             // Ensure width
-            if (maxX + 2 + margin > page.PageSheet.CellsU["PageWidth"].ResultIU)
+            if (maxX + margin > page.PageSheet.CellsU["PageWidth"].ResultIU)
             {
-                page.PageSheet.CellsU["PageWidth"].ResultIU = maxX + 2 + margin;
+                page.PageSheet.CellsU["PageWidth"].ResultIU = maxX + margin;
             }
         }
-
-
         private Shape GetShapeByName(Page page, string name)
         {
             foreach (Shape shape in page.Shapes)
@@ -315,7 +344,7 @@ namespace BlazorGraph
             if (rowIndex != -1 && columnIndex != -1)
             {
                 double x = columnIndex * x_offset + 0.5;  // added offset
-                double y = init_y + rowIndex * y_offset;
+                double y = init_y - rowIndex * y_offset;
 
                 // Here, instead of modifying the existing node, we create a new one and return it.
                 GraphNode newNode = new GraphNode(node.ComponentName)
