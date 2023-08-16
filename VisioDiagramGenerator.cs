@@ -5,7 +5,7 @@ namespace BlazorGraph
 {
     public class VisioDiagramGenerator
     {
-        private const double init_y = 8;
+        private const double init_y = 8.5;
         private const double margin = 1;
         private double headerHeight = 0.5;
 
@@ -15,7 +15,7 @@ namespace BlazorGraph
         private HashSet<string> processedNodes = new HashSet<string>();
 
         private double x_offset = 2.25;
-        private double y_offset = 1.25;
+        private double y_offset = 1.75;
         private double card_height = 1;
         private double card_width = 2;
 
@@ -108,10 +108,10 @@ namespace BlazorGraph
             }
 
             // Group shapes by row
-            foreach (var rowShapes in shapesByRow.Values)
-            {
-                GroupShapesByRow(rowShapes, page);
-            }
+            //foreach (var rowShapes in shapesByRow.Values)
+            //{
+            //    GroupShapesByRow(rowShapes, page);
+            //}
 
             // Apply auto layout after grouping
             //ApplyAutoLayout(page);
