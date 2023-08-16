@@ -1,11 +1,5 @@
 ﻿using BlazorGraph;
-using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.Extensions.Configuration;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace BlazorComponentAnalyzer
 {
@@ -16,10 +10,10 @@ namespace BlazorComponentAnalyzer
             var configHandler = new ConfigurationHandler(args);
             var settings = configHandler.GetAppSettings();
 
-            var extractor = new BlazorComponentExtractor(settings);
-            var razorFiles = GetRazorFiles(settings.Directory); 
-            var componentRelations = extractor.ExtractComponentRelationsFromRazorFiles(razorFiles);
-            extractor.PrintComponentRelations(componentRelations);
+            var razorFiles = GetRazorFiles(settings.Directory);
+            BlazorComponentExtractor.Configure(settings);
+            var componentRelations = BlazorComponentExtractor.ExtractComponentRelationsFromRazorFiles(razorFiles);
+            BlazorComponentExtractor.PrintComponentRelations(componentRelations);
 
             var graphGenerator = new MermaidGraphGenerator(settings);
             var graph = graphGenerator.GenerateMermaidGraph(componentRelations);

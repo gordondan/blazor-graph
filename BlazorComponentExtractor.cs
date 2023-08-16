@@ -12,38 +12,40 @@ using System.Xml.Linq;
 
 namespace BlazorGraph
 {
-    public class BlazorComponentExtractor
+    public static class BlazorComponentExtractor
     {
         private static AppSettings _appSettings;
-        public BlazorComponentExtractor(AppSettings appSettings)
+
+        public static void Configure(AppSettings appSettings)
         {
             _appSettings = appSettings;
         }
-        public Dictionary<string,List<string>> ExtractComponentRelationsFromRazorFiles(IEnumerable<string> razorFiles)
+
+        public static Dictionary<string, List<string>> ExtractComponentRelationsFromRazorFiles(IEnumerable<string> razorFiles)
         {
-            var componentRelations = new Dictionary<string,List<string>>();
+            var componentRelations = new Dictionary<string, List<string>>();
             foreach (var razorFilePath in razorFiles)
             {
                 var razorContent = File.ReadAllText(razorFilePath);
                 var components = ExtractBlazorComponents(razorContent);
 
-                // Assuming the filename itself (without path or extension) represents the component's name
                 var currentComponent = Path.GetFileNameWithoutExtension(razorFilePath);
-
                 componentRelations[currentComponent] = components;
             }
             componentRelations = SortDictionary(componentRelations, _appSettings.StartingNode);
 
             return componentRelations;
         }
+
         public static List<string> ExtractBlazorComponents(string razorContent)
         {
             var csharpCode = GenerateCSharpFromRazor(razorContent);
             var componentNames = ExtractComponentUsagesFromGeneratedCSharp(csharpCode);
-            componentNames = componentNames.Where(x=>!_appSettings.Skips.Contains(x)).ToList();
+            componentNames = componentNames.Where(x => !_appSettings.Skips.Contains(x)).ToList();
             return componentNames;
         }
-        public void PrintComponentRelations(Dictionary<string, List<string>> componentRelations)
+
+        public static void PrintComponentRelations(Dictionary<string, List<string>> componentRelations)
         {
             StringBuilder contentBuilder = new StringBuilder();
             foreach (var relation in componentRelations)
@@ -54,17 +56,15 @@ namespace BlazorGraph
             }
 
             var outputFilePath = _appSettings?.OutputFilePath ?? "componentRelations.txt";
-
             File.WriteAllText(outputFilePath, contentBuilder.ToString());
         }
+
         private static string GenerateCSharpFromRazor(string razorContent)
         {
             var engine = RazorProjectEngine.Create(RazorConfiguration.Default, RazorProjectFileSystem.Create("/"), (builder) => { });
-
             var sourceDocument = RazorSourceDocument.Create(razorContent, "RazorFile");
             var projectItem = new CustomRazorProjectItem(sourceDocument);
             var codeDocument = engine.Process(projectItem);
-
             var csharp = codeDocument.GetCSharpDocument().GeneratedCode;
             return csharp;
         }
@@ -73,14 +73,11 @@ namespace BlazorGraph
         {
             var tree = CSharpSyntaxTree.ParseText(csharpCode);
             var root = tree.GetCompilationUnitRoot();
-
             var componentNames = new HashSet<string>();
-
             var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
             foreach (var invocation in invocations)
             {
-                if (invocation.Expression is IdentifierNameSyntax methodName
-                    && methodName.Identifier.Text == "WriteLiteral")
+                if (invocation.Expression is IdentifierNameSyntax methodName && methodName.Identifier.Text == "WriteLiteral")
                 {
                     var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
                     if (argument != null)
@@ -90,9 +87,9 @@ namespace BlazorGraph
                     }
                 }
             }
-
             return componentNames.ToList();
         }
+
         private static IEnumerable<string> ExtractComponentNamesFromLiteral(string literalValue)
         {
             var matches = Regex.Matches(literalValue, @"<(\w+)(\s|>)");
@@ -102,14 +99,11 @@ namespace BlazorGraph
 
         private static bool IsValidComponentName(string name)
         {
-            // Example criteria: Component names start with a capital letter
             return Char.IsUpper(name[0]);
         }
 
-
         private static bool IsHtmlTag(string tagName)
         {
-            // You can expand this list based on common HTML tags you encounter.
             var htmlTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "a", "div", "span", "h1", "h2", "h3", "p", "br", "input", "button", "form",
@@ -120,23 +114,19 @@ namespace BlazorGraph
 
             return htmlTags.Contains(tagName);
         }
-
+        
         private static Dictionary<string, List<string>> SortDictionary(Dictionary<string, List<string>> componentRelations, string startingNode)
         {
-            if (startingNode != null)
+            if (startingNode != null && componentRelations.ContainsKey(startingNode))
             {
-                if (componentRelations.ContainsKey(startingNode))
+                var startingNodeRelations = new Dictionary<string, List<string>>
                 {
-                    var startingNodeRelations = new Dictionary<string, List<string>>
-            {
-                { startingNode, componentRelations[startingNode] }
-            };
-                    componentRelations.Remove(startingNode);
-                    componentRelations = startingNodeRelations.Concat(componentRelations).ToDictionary(k => k.Key, v => v.Value);
-                }
+                    { startingNode, componentRelations[startingNode] }
+                };
+                componentRelations.Remove(startingNode);
+                componentRelations = startingNodeRelations.Concat(componentRelations).ToDictionary(k => k.Key, v => v.Value);
             }
-                return componentRelations;
-            
+            return componentRelations;
         }
     }
 }
