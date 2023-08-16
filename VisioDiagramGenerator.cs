@@ -100,7 +100,7 @@ namespace BlazorGraph
             foreach (var node in graphNodes)
             {
                 Shape sourceShape = GetShapeByName(page, node.ComponentName);
-                foreach (var relatedNode in node.RelatedComponents)
+                foreach (var relatedNode in node.Children)
                 {
                     Shape targetShape = GetShapeByName(page, relatedNode.ComponentName);
                     ConnectShapes(sourceShape, targetShape, page);
@@ -119,6 +119,7 @@ namespace BlazorGraph
         private List<GraphNode> LoadGrid(Dictionary<string, List<string>> componentRelations)
         {
             List<GraphNode> graphNodes = new List<GraphNode>();
+            HashSet<string> distinctNodes = new HashSet<string>();
             List<string> orderedNodes = ComponentGraphProcessor.PreprocessRelationsBFS(componentRelations);
 
             foreach (var rootNode in orderedNodes)
@@ -126,12 +127,16 @@ namespace BlazorGraph
                 Queue<string> nodesToProcess = new Queue<string>();
                 nodesToProcess.Enqueue(rootNode);
 
-
                 while (nodesToProcess.Count > 0)
                 {
                     string currentComponent = nodesToProcess.Dequeue();
 
-                    // Get or create the graph node for the current component
+                    // Avoid adding duplicate nodes
+                    if (distinctNodes.Contains(currentComponent))
+                        continue;
+
+                    distinctNodes.Add(currentComponent);
+
                     GraphNode node = graphNodes.FirstOrDefault(n => n.ComponentName == currentComponent);
                     if (node == null)
                     {
@@ -140,31 +145,27 @@ namespace BlazorGraph
                     }
 
                     _grid = ComponentGraphProcessor.AddNodeToGrid(currentComponent, componentRelations, _grid);
-                    //ComponentGraphProcessor.ConsoleWriteGrid(_grid);
 
-                    //SetPositionFromGrid(node, currentComponent); // Update this method to work with GraphNode
                     if (componentRelations.ContainsKey(currentComponent))
                     {
-                        foreach (string relatedComponent in componentRelations[currentComponent])
+                        foreach (string childComponent in componentRelations[currentComponent])
                         {
-                            if (!processedNodes.Contains(relatedComponent))
+                            nodesToProcess.Enqueue(childComponent);
+
+                            GraphNode childNode = graphNodes.FirstOrDefault(n => n.ComponentName == childComponent);
+                            if (childNode == null)
                             {
-                                nodesToProcess.Enqueue(relatedComponent);
-
-                                // Add related node to the current graph node
-                                GraphNode relatedNode = graphNodes.FirstOrDefault(n => n.ComponentName == relatedComponent);
-                                if (relatedNode == null)
-                                {
-                                    relatedNode = new GraphNode(relatedComponent);
-                                    graphNodes.Add(relatedNode);
-                                }
-
-                                node.AddRelatedComponent(relatedNode);
+                                childNode = new GraphNode(childComponent);
+                                graphNodes.Add(childNode);
                             }
+
+                            node.AddChild(childNode);          // Add childNode as a child to the current node
+                            childNode.AddParent(node);         // Mark the current node as a parent of childNode
                         }
                     }
                 }
             }
+
             return graphNodes;
         }
         private void ConnectShapes(Shape shape1, Shape shape2, Page page)
@@ -247,9 +248,10 @@ namespace BlazorGraph
 
         private void LabelDependencies(Shape body, GraphNode node)
         {
-            int stateDeps = node.RelatedComponents.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count();
-            int outgoingDeps = node.RelatedComponents.Count();
-            int incomingDeps = 0; // Get from node
+            int stateDeps = node.Children.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count();
+            stateDeps += node.Parents.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count(); ;
+            int outgoingDeps = node.Children.Count();
+            int incomingDeps = node.Parents.Count();
 
             body.Text = $"State Dep: {stateDeps}\nOutgoing: {outgoingDeps}\nIncoming: {incomingDeps}";
         }
@@ -351,7 +353,8 @@ namespace BlazorGraph
                 {
                     X = x,
                     Y = y,
-                    RelatedComponents = new List<GraphNode>(node.RelatedComponents)  // shallow copy to maintain the same list of related nodes
+                        Children = new List<GraphNode>(node.Children),
+                    Parents = new List<GraphNode>(node.Parents)
                 };
 
                 return newNode;
@@ -365,7 +368,7 @@ namespace BlazorGraph
             foreach (var node in graphNodes)
             {
                 Console.WriteLine($"Node: {node.ComponentName}, X: {node.X}, Y: {node.Y}");
-                foreach (var related in node.RelatedComponents)
+                foreach (var related in node.Children)
                 {
                     Console.WriteLine($"\tRelated: {related.ComponentName}");
                 }
