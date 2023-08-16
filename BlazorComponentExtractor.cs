@@ -43,7 +43,20 @@ namespace BlazorGraph
             componentNames = componentNames.Where(x=>!_appSettings.Skips.Contains(x)).ToList();
             return componentNames;
         }
+        public void PrintComponentRelations(Dictionary<string, List<string>> componentRelations)
+        {
+            StringBuilder contentBuilder = new StringBuilder();
+            foreach (var relation in componentRelations)
+            {
+                string line = $"{relation.Key} -> {string.Join(", ", relation.Value)}";
+                contentBuilder.AppendLine(line);
+                Console.WriteLine(line);
+            }
 
+            var outputFilePath = _appSettings?.OutputFilePath ?? "componentRelations.txt";
+
+            File.WriteAllText(outputFilePath, contentBuilder.ToString());
+        }
         private static string GenerateCSharpFromRazor(string razorContent)
         {
             var engine = RazorProjectEngine.Create(RazorConfiguration.Default, RazorProjectFileSystem.Create("/"), (builder) => { });

@@ -19,6 +19,7 @@ namespace BlazorComponentAnalyzer
             var extractor = new BlazorComponentExtractor(settings);
             var razorFiles = GetRazorFiles(settings.Directory); 
             var componentRelations = extractor.ExtractComponentRelationsFromRazorFiles(razorFiles);
+            extractor.PrintComponentRelations(componentRelations);
 
             var graphGenerator = new MermaidGraphGenerator(settings);
             var graph = graphGenerator.GenerateMermaidGraph(componentRelations);
