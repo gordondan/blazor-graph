@@ -28,14 +28,21 @@ namespace BlazorGraph
             var document = application.Documents.Add("");
             var page = application.ActivePage;
 
+            var rootNodes = GetRootNodes(componentRelations);
+
+            foreach (var rootNode in rootNodes)
+            {
+                ProcessComponent(new KeyValuePair<string, List<string>>(rootNode, componentRelations[rootNode]), page, componentRelations, isRoot: true);
+            }
+
             foreach (var component in componentRelations)
             {
-                ProcessComponent(component, page, componentRelations);
+                if (!rootNodes.Contains(component.Key)) // This check ensures root nodes are not processed again.
+                    ProcessComponent(component, page, componentRelations);
             }
 
             application.ActiveWindow.ViewFit = (short)VisWindowFit.visFitPage;
             application.ActiveWindow.Zoom = 1; // Sets zoom to 100%
-            application.ActiveWindow.SetViewRect(0, page.PageSheet.CellsU["PageHeight"].ResultIU,0,0);
 
             // Save the document to the specified file in AppSettings
             string currentDirectory = Directory.GetCurrentDirectory();
@@ -47,7 +54,7 @@ namespace BlazorGraph
             application.Quit();
         }
 
-        private void ProcessComponent(KeyValuePair<string, List<string>> component, Page page, Dictionary<string, List<string>> componentRelations, int depth = 0)
+        private void ProcessComponent(KeyValuePair<string, List<string>> component, Page page, Dictionary<string, List<string>> componentRelations, int depth = 0, bool isRoot = false)
         {
             Console.WriteLine($"Processing: {component.Key} at X: {currentX}, Y: {currentY}");
 
@@ -61,6 +68,11 @@ namespace BlazorGraph
             processedNodes.Add(parentName);
 
             Shape parentShape = CreateShape(page, parentName);
+
+            if (!isRoot)
+            {
+                depth += 1; // Increase the depth for child components
+            }
 
             depth += 1; // Increase the depth for child components
 
@@ -97,15 +109,15 @@ namespace BlazorGraph
 
         private void EnsurePageSize(Page page)
         {
-            const double margin = 2; // some space on all sides
+            const double margin = 1; // some space on all sides
 
             // Ensure height
-            if (currentY - margin < 0)
-            {
-                double heightIncrease = Math.Abs(currentY) + margin;
-                page.PageSheet.CellsU["PageHeight"].ResultIU += heightIncrease;
-                currentY += heightIncrease;
-            }
+            //if (currentY - margin < 0)
+            //{
+            //    double heightIncrease = Math.Abs(currentY) + margin;
+            //    page.PageSheet.CellsU["PageHeight"].ResultIU += heightIncrease;
+            //    currentY += heightIncrease;
+            //}
 
             // Ensure width
             if (currentX + 2 + margin > page.PageSheet.CellsU["PageWidth"].ResultIU)
@@ -164,7 +176,19 @@ namespace BlazorGraph
 
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
         }
-    
+        private HashSet<string> GetRootNodes(Dictionary<string, List<string>> componentRelations)
+        {
+            HashSet<string> allNodes = new HashSet<string>(componentRelations.Keys);
+            foreach (var relatedComponents in componentRelations.Values)
+            {
+                foreach (var relatedComponent in relatedComponents)
+                {
+                    allNodes.Remove(relatedComponent); // removes child nodes, leaving only the root nodes
+                }
+            }
+            return allNodes;
+        }
+
         private bool IsVendorComponent(string componentName)
         {
             return _appSettings.Vendors.Any(vendor => componentName.Contains(vendor));
