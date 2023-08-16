@@ -32,7 +32,7 @@ namespace BlazorGraph
             var page = application.ActivePage;
 
             List<GraphNode> graphNodes = LoadGrid(componentRelations);
-            ConsoleWriteGrid(graphNodes);  // This method will print grid for debugging
+            
             WriteToVisio(graphNodes, page);
 
             application.ActiveWindow.ViewFit = (short)VisWindowFit.visFitPage;
@@ -70,7 +70,7 @@ namespace BlazorGraph
                     }
 
                     _grid = ComponentGraphProcessor.AddNodeToGrid(currentComponent, componentRelations, _grid);
-                    ComponentGraphProcessor.ConsoleWriteGrid(_grid);
+                    //ComponentGraphProcessor.ConsoleWriteGrid(_grid);
 
                     //SetPositionFromGrid(node, currentComponent); // Update this method to work with GraphNode
                     if (componentRelations.ContainsKey(currentComponent))
@@ -106,25 +106,17 @@ namespace BlazorGraph
             }
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
         }
-        private void ConsoleWriteGrid(List<GraphNode> graphNodes)
+        private Shape CreateShape(Page page, GraphNode node)
         {
-            foreach (var node in graphNodes)
-            {
-                Console.WriteLine($"Node: {node.ComponentName}, X: {node.X}, Y: {node.Y}");
-                foreach (var related in node.RelatedComponents)
-                {
-                    Console.WriteLine($"\tRelated: {related.ComponentName}");
-                }
-            }
-        }
+            var x = node.X;
+            var y = node.Y;
+            var componentName = node.ComponentName;
 
-        private Shape CreateShape(Page page, string componentName)
-        {
-            Console.WriteLine($"Creating shape for: {componentName} at X: {currentX}, Y: {currentY}");
+            Console.WriteLine($"Creating shape for: {componentName} at X: {x}, Y: {y}");
 
             EnsurePageSize(page);
 
-            Shape shape = page.DrawRectangle(currentX, currentY, currentX + 2, currentY + 1);
+            Shape shape = page.DrawRectangle(x,y, x + 2, y + 1);
             shape.Text = componentName;
 
             // Setting shape rounding for rounded rectangle
@@ -148,7 +140,7 @@ namespace BlazorGraph
                     Console.WriteLine($"Error setting color for component {componentName}: {ex.Message}");
                 }
             }
-            if (componentName.EndsWith("State"))
+            if (ComponentGraphProcessor.IsStateComponent(componentName))
             {
                 try
                 {
@@ -202,21 +194,32 @@ namespace BlazorGraph
         private void WriteToVisio(List<GraphNode> graphNodes, Page page)
         {
             var positionedNodes = GetPositionsForNodes(graphNodes);
+            ConsoleWriteGrid(positionedNodes);  // This method will print grid for debugging
 
+            // 1. Draw all the shapes first
             foreach (var positionedNode in positionedNodes)
             {
                 Console.WriteLine($"Processing: {positionedNode.ComponentName} at X: {positionedNode.X}, Y: {positionedNode.Y}");
 
                 EnsurePageSize(page);
-                Shape currentShape = CreateShape(page, positionedNode.ComponentName);
+                CreateShape(page, positionedNode);
+            }
 
+            // 2. Now make the connections between the shapes
+            foreach (var positionedNode in positionedNodes)
+            {
+                Shape currentShape = GetShapeByName(page, positionedNode.ComponentName);
                 foreach (var relatedNode in positionedNode.RelatedComponents)
                 {
                     Shape relatedShape = GetShapeByName(page, relatedNode.ComponentName);
-                    ConnectShapes(currentShape, relatedShape, page);
+                    if (currentShape != null && relatedShape != null) // Safety check
+                    {
+                        ConnectShapes(currentShape, relatedShape, page);
+                    }
                 }
             }
         }
+
 
         private GraphNode GetPositionForNode(GraphNode node)
         {
@@ -250,6 +253,18 @@ namespace BlazorGraph
             }
 
             return node;  // If there's no change in the position, return the original node.
+        }
+
+        private void ConsoleWriteGrid(List<GraphNode> graphNodes)
+        {
+            foreach (var node in graphNodes)
+            {
+                Console.WriteLine($"Node: {node.ComponentName}, X: {node.X}, Y: {node.Y}");
+                foreach (var related in node.RelatedComponents)
+                {
+                    Console.WriteLine($"\tRelated: {related.ComponentName}");
+                }
+            }
         }
 
 

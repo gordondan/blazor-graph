@@ -39,6 +39,10 @@
         {
             return AppSettings.Vendors.Any(vendor => componentName.Contains(vendor));
         }
+        public static bool IsStateComponent(string componentName)
+        {
+            return componentName.EndsWith("State");
+        }
 
         public static List<List<string>> AddNodeToGrid(string nodeName, Dictionary<string, List<string>> componentRelations, List<List<string>> inputGrid)
         {
