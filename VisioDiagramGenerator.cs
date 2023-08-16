@@ -14,6 +14,8 @@ namespace BlazorGraph
         private HashSet<string> stateNodes = new HashSet<string>();
         private double x_offset = 2.25;
         private double y_offset = -1.25;
+        private List<GraphNode> graphNodes = new List<GraphNode>();
+        private Dictionary<GraphNode, (double X, double Y)> nodePositions = new Dictionary<GraphNode, (double X, double Y)>();
 
         public VisioDiagramGenerator(AppSettings appSettings)
         {
@@ -29,29 +31,91 @@ namespace BlazorGraph
             var document = application.Documents.Add("");
             var page = application.ActivePage;
 
-            var rootNodes = ComponentGraphProcessor.GetRootNodes(componentRelations);
-            List<string> orderedNodes = ComponentGraphProcessor.PreprocessRelationsBFS(componentRelations);
-
-            foreach (var rootNode in orderedNodes)
-            {
-                ProcessComponent(rootNode, page, componentRelations, isRoot: true);
-            }
+            List<GraphNode> graphNodes = LoadGrid(componentRelations);
+            ConsoleWriteGrid(graphNodes);  // This method will print grid for debugging
+            WriteToVisio(graphNodes, page);
 
             application.ActiveWindow.ViewFit = (short)VisWindowFit.visFitPage;
-            application.ActiveWindow.Zoom = 1; // Sets zoom to 100%
+            application.ActiveWindow.Zoom = 1;  // Sets zoom to 100%
 
-            // Save the document to the specified file in AppSettings
             string currentDirectory = Directory.GetCurrentDirectory();
             string fullPath = System.IO.Path.Combine(currentDirectory, _appSettings.VisioFileName);
             document.SaveAs(fullPath);
 
-            // Close the document and Visio application
             document.Close();
             application.Quit();
         }
+
+        private List<GraphNode> LoadGrid(Dictionary<string, List<string>> componentRelations)
+        {
+            List<GraphNode> graphNodes = new List<GraphNode>();
+            List<string> orderedNodes = ComponentGraphProcessor.PreprocessRelationsBFS(componentRelations);
+
+            foreach (var rootNode in orderedNodes)
+            {
+                Queue<string> nodesToProcess = new Queue<string>();
+                nodesToProcess.Enqueue(rootNode);
+
+
+                while (nodesToProcess.Count > 0)
+                {
+                    string currentComponent = nodesToProcess.Dequeue();
+
+                    // Get or create the graph node for the current component
+                    GraphNode node = graphNodes.FirstOrDefault(n => n.ComponentName == currentComponent);
+                    if (node == null)
+                    {
+                        node = new GraphNode(currentComponent);
+                        graphNodes.Add(node);
+                    }
+
+                    _grid = ComponentGraphProcessor.AddNodeToGrid(currentComponent, componentRelations, _grid);
+                    ComponentGraphProcessor.ConsoleWriteGrid(_grid);
+
+                    //SetPositionFromGrid(node, currentComponent); // Update this method to work with GraphNode
+                    if (componentRelations.ContainsKey(currentComponent))
+                    {
+                        foreach (string relatedComponent in componentRelations[currentComponent])
+                        {
+                            if (!processedNodes.Contains(relatedComponent))
+                            {
+                                nodesToProcess.Enqueue(relatedComponent);
+
+                                // Add related node to the current graph node
+                                GraphNode relatedNode = graphNodes.FirstOrDefault(n => n.ComponentName == relatedComponent);
+                                if (relatedNode == null)
+                                {
+                                    relatedNode = new GraphNode(relatedComponent);
+                                    graphNodes.Add(relatedNode);
+                                }
+
+                                node.AddRelatedComponent(relatedNode);
+                            }
+                        }
+                    }
+                }
+            }
+            return graphNodes;
+        }
         private void ConnectShapes(Shape shape1, Shape shape2, Page page)
         {
+            if (shape1 == null || shape2 == null)
+            {
+                Console.WriteLine($"Warning: Attempted to connect a null shape. Shape1: {shape1?.Text}, Shape2: {shape2?.Text}");
+                return;
+            }
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
+        }
+        private void ConsoleWriteGrid(List<GraphNode> graphNodes)
+        {
+            foreach (var node in graphNodes)
+            {
+                Console.WriteLine($"Node: {node.ComponentName}, X: {node.X}, Y: {node.Y}");
+                foreach (var related in node.RelatedComponents)
+                {
+                    Console.WriteLine($"\tRelated: {related.ComponentName}");
+                }
+            }
         }
 
         private Shape CreateShape(Page page, string componentName)
@@ -130,62 +194,38 @@ namespace BlazorGraph
             }
             return null;
         }
-
-        private void ProcessComponent(string rootNode, Page page, Dictionary<string, List<string>> componentRelations, bool isRoot)
+        private List<GraphNode> GetPositionsForNodes(List<GraphNode> graphNodes)
         {
-            Queue<string> nodesToProcess = new Queue<string>();
-            nodesToProcess.Enqueue(rootNode);
+            return graphNodes.Select(node => GetPositionForNode(node)).ToList();
+        }
 
+        private void WriteToVisio(List<GraphNode> graphNodes, Page page)
+        {
+            var positionedNodes = GetPositionsForNodes(graphNodes);
 
-            double originalY = currentY;  // Store the original Y value for root node positioning
-
-            while (nodesToProcess.Count > 0)
+            foreach (var positionedNode in positionedNodes)
             {
-                string currentComponent = nodesToProcess.Dequeue();
-
-                // Decide the position
-                _grid = ComponentGraphProcessor.AddNodeToGrid(currentComponent, componentRelations, _grid);
-                ComponentGraphProcessor.ConsoleWriteGrid(_grid);
-                SetPositionFromGrid(currentComponent);
-
-                Console.WriteLine($"Processing: {currentComponent} at X: {currentX}, Y: {currentY}");
+                Console.WriteLine($"Processing: {positionedNode.ComponentName} at X: {positionedNode.X}, Y: {positionedNode.Y}");
 
                 EnsurePageSize(page);
+                Shape currentShape = CreateShape(page, positionedNode.ComponentName);
 
-                if (!processedNodes.Contains(currentComponent))
+                foreach (var relatedNode in positionedNode.RelatedComponents)
                 {
-                    Shape currentShape = CreateShape(page, currentComponent);
-                    processedNodes.Add(currentComponent);
-
-                    if (componentRelations.ContainsKey(currentComponent))
-                    {
-                        foreach (string relatedComponent in componentRelations[currentComponent])
-                        {
-                            if (!processedNodes.Contains(relatedComponent))
-                            {
-                                nodesToProcess.Enqueue(relatedComponent);
-                            }
-
-                            // Connecting nodes
-                            Shape relatedShape = GetShapeByName(page, relatedComponent);
-                            if (relatedShape != null)
-                            {
-                                ConnectShapes(currentShape, relatedShape, page);
-                            }
-                        }
-                    }
+                    Shape relatedShape = GetShapeByName(page, relatedNode.ComponentName);
+                    ConnectShapes(currentShape, relatedShape, page);
                 }
             }
         }
 
-        private void SetPositionFromGrid(string nodeName)
+        private GraphNode GetPositionForNode(GraphNode node)
         {
             int rowIndex = -1;
             int columnIndex = -1;
 
             for (int i = 0; i < _grid.Count; i++)
             {
-                columnIndex = _grid[i].IndexOf(nodeName);
+                columnIndex = _grid[i].IndexOf(node.ComponentName);
                 if (columnIndex != -1)
                 {
                     rowIndex = i;
@@ -195,10 +235,23 @@ namespace BlazorGraph
 
             if (rowIndex != -1 && columnIndex != -1)
             {
-                currentX = columnIndex * x_offset + 0.5;  // added offset
-                currentY = init_y - rowIndex * y_offset;
+                double x = columnIndex * x_offset + 0.5;  // added offset
+                double y = init_y - rowIndex * y_offset;
+
+                // Here, instead of modifying the existing node, we create a new one and return it.
+                GraphNode newNode = new GraphNode(node.ComponentName)
+                {
+                    X = x,
+                    Y = y,
+                    RelatedComponents = new List<GraphNode>(node.RelatedComponents)  // shallow copy to maintain the same list of related nodes
+                };
+
+                return newNode;
             }
+
+            return node;  // If there's no change in the position, return the original node.
         }
+
 
     }
 }
