@@ -9,9 +9,13 @@ namespace BlazorGraph
     {
         private AppSettings _appSettings;
         private double currentX = .5;
-        private double currentY = 20;
-        private double y_offset = -1;
-        private double x_offset = 2.25;
+        private double currentY = 10;
+        private const double init_y = 10;
+        private double y_offset = -1.25;
+        private double x_offset = 3;
+
+        private HashSet<string> processedNodes = new HashSet<string>();
+
         public VisioDiagramGenerator(AppSettings appSettings)
         {
             _appSettings = appSettings;
@@ -20,13 +24,13 @@ namespace BlazorGraph
         public void GenerateVisioDiagram(Dictionary<string, List<string>> componentRelations)
         {
             var application = new Microsoft.Office.Interop.Visio.Application();
-            application.Visible = false;
+            application.Visible = true;
             var document = application.Documents.Add("");
             var page = application.ActivePage;
 
             foreach (var component in componentRelations)
             {
-                ProcessComponent(component, page);
+                ProcessComponent(component, page, componentRelations);
             }
 
             // Save the document to the specified file in AppSettings
@@ -34,63 +38,95 @@ namespace BlazorGraph
             string fullPath = System.IO.Path.Combine(currentDirectory, _appSettings.VisioFileName);
             document.SaveAs(fullPath);
 
-
             // Close the document and Visio application
             document.Close();
             application.Quit();
         }
 
-        private void ProcessComponent(KeyValuePair<string, List<string>> component, Page page)
+        private void ProcessComponent(KeyValuePair<string, List<string>> component, Page page, Dictionary<string, List<string>> componentRelations, int depth = 0)
         {
+            Console.WriteLine($"Processing: {component.Key} at X: {currentX}, Y: {currentY}");
+
             EnsurePageSize(page);
 
             string parentName = component.Key;
+
+            if (processedNodes.Contains(parentName))
+                return;  // skip nodes that have already been processed
+
+            processedNodes.Add(parentName);
+
             Shape parentShape = CreateShape(page, parentName);
 
-            // Save current x value and adjust y for children
-            double originalX = currentX;
-            currentY += y_offset;
+            depth += 1; // Increase the depth for child components
+
+            double originalX = currentX; // remember the starting X position
 
             foreach (var relatedComponent in component.Value)
             {
-                Shape childShape = CreateShape(page, relatedComponent);
-                ConnectShapes(parentShape, childShape, page);
+                currentY += y_offset; // Move down for each child
+
+                // If the relatedComponent has its own children, process them
+                if (componentRelations.ContainsKey(relatedComponent))
+                {
+                    var childComponentPair = new KeyValuePair<string, List<string>>(relatedComponent, componentRelations[relatedComponent]);
+                    ProcessComponent(childComponentPair, page, componentRelations, depth);
+                }
+                else
+                {
+                    // Otherwise, just create a shape for the child
+                    Shape childShape = CreateShape(page, relatedComponent);
+                    ConnectShapes(parentShape, childShape, page);
+                }
+
+                currentX += x_offset; // Move to the right for the next child (or sibling)
             }
 
-            // Reset y for next parent and set x to where it was after processing the parent
-            currentY -= y_offset;
-            currentX = originalX;
+            currentX = originalX; // reset the X position back to the parent's X position
         }
 
         private void EnsurePageSize(Page page)
         {
             const double margin = 2; // some space on all sides
 
-            if (currentY < margin)
+            // Ensure height
+            if (currentY - margin < 0)
             {
-                page.PageSheet.CellsU["PageHeight"].ResultIU += Math.Abs(currentY) + margin;
-                currentY += Math.Abs(currentY) + margin;
+                double heightIncrease = Math.Abs(currentY) + margin;
+                page.PageSheet.CellsU["PageHeight"].ResultIU += heightIncrease;
+                currentY += heightIncrease;
+            }
+
+            // Ensure width
+            if (currentX + 2 + margin > page.PageSheet.CellsU["PageWidth"].ResultIU)
+            {
+                page.PageSheet.CellsU["PageWidth"].ResultIU = currentX + 2 + margin;
             }
         }
 
-
         private Shape CreateShape(Page page, string componentName)
         {
+            Console.WriteLine($"Creating shape for: {componentName} at X: {currentX}, Y: {currentY}");
+
+            EnsurePageSize(page);
+
             Shape shape = page.DrawRectangle(currentX, currentY, currentX + 2, currentY + 1);
             shape.Text = componentName;
 
-            // Increment the y-value for the next shape. Adjust this value as needed for spacing.
-            currentY += y_offset;
+            // Setting shape rounding for rounded rectangle
+            shape.CellsU["Rounding"].ResultIU = 0.25;  // Adjust the value as necessary for the desired rounding
 
-            // Add color to vendor components
+            // Default to navy blue with white text
+            shape.CellsU["FillForegnd"].FormulaU = "RGB(0, 0, 128)";
+            shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White color for text
+
+            // If it's a vendor component, set to lime green with white text
             if (IsVendorComponent(componentName))
             {
-                // Assuming VendorComponentColor is in the format "RGB(255,0,0)" for red.
                 try
                 {
-                    //shape.CellsU["FillForegnd"].FormulaU = _appSettings.VendorComponentColor;
-                    shape.CellsU["FillForegnd"].FormulaU = "RGB(0, 0, 128)";  // This should turn the shape red
-
+                    shape.CellsU["FillForegnd"].FormulaU = "RGB(50, 205, 50)";  // Lime green
+                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White color for text
                 }
                 catch (COMException ex)
                 {
@@ -99,35 +135,9 @@ namespace BlazorGraph
                 }
             }
 
-
             return shape;
         }
 
-        //private void ConnectShapes(Shape parentShape, Shape childShape, Page page)
-        //{
-        //    // Ensure the shapes are valid before attempting to connect them.
-        //    if (parentShape == null || childShape == null)
-        //    {
-        //        throw new ArgumentNullException("One or both of the shapes are null.");
-        //    }
-
-        //    var flowchartStencil = page.Application.Documents.OpenEx("BASFLO_M.VSSX", (short)VisOpenSaveArgs.visOpenRO + (short)VisOpenSaveArgs.visOpenDocked);
-        //    foreach (Master master in flowchartStencil.Masters)
-        //    {
-        //        Console.WriteLine(master.Name);
-        //    }
-        //    var connectorMaster = flowchartStencil.Masters["Dynamic Connector"];
-
-
-
-        //    var connector = page.Drop(connectorMaster, 0, 0);
-
-        //    connector.CellsU["BeginX"].GlueTo(parentShape.CellsU["PinX"]);
-        //    connector.CellsU["BeginY"].GlueTo(parentShape.CellsU["PinY"]);
-        //    connector.CellsU["EndX"].GlueTo(childShape.CellsU["PinX"]);
-        //    connector.CellsU["EndY"].GlueTo(childShape.CellsU["PinY"]);
-
-        //}
         private void ConnectShapes(Shape shape1, Shape shape2, Page page)
         {
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
