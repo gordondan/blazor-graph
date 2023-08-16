@@ -12,7 +12,7 @@ namespace BlazorGraph
         private double currentY = 10;
         private const double init_y = 10;
         private double y_offset = -1.25;
-        private double x_offset = 3;
+        private double x_offset = 2.25;
 
         private HashSet<string> processedNodes = new HashSet<string>();
 
@@ -69,28 +69,26 @@ namespace BlazorGraph
 
             Shape parentShape = CreateShape(page, parentName);
 
-            if (!isRoot)
-            {
-                depth += 1; // Increase the depth for child components
-            }
-
-            depth += 1; // Increase the depth for child components
-
-            double originalX = currentX; // remember the starting X position
             double originalY = currentY; // remember the starting Y position
 
             foreach (var relatedComponent in component.Value)
             {
-                currentY += y_offset * depth; // Move down by 'depth' times the 'y_offset' for each child
+                if (isRoot) // For direct descendants of a root node
+                {
+                    currentY = originalY+y_offset;
+                }
+                else
+                {
+                    currentY += y_offset * depth; // For deeper descendants
+                }
 
-                // If the relatedComponent has its own children, process them
                 if (componentRelations.ContainsKey(relatedComponent))
                 {
                     var childComponentPair = new KeyValuePair<string, List<string>>(relatedComponent, componentRelations[relatedComponent]);
-                    ProcessComponent(childComponentPair, page, componentRelations, depth);
+                    ProcessComponent(childComponentPair, page, componentRelations, depth + 1);
                 }
                 else
-                {// Inside the foreach loop in ProcessComponent
+                {
                     Shape childShape = GetShapeByName(page, relatedComponent);
                     if (childShape == null)
                     {
@@ -103,8 +101,10 @@ namespace BlazorGraph
                 currentX += x_offset; // Move to the right for the next child (or sibling)
             }
 
-            currentX = originalX; // reset the X position back to the parent's X position
-            currentY = originalY; // reset the Y position back to the parent's Y position
+            if (isRoot)
+            {
+                currentY = originalY; // Only reset the Y position for root nodes (their siblings should be on the same level)
+            }
         }
 
         private void EnsurePageSize(Page page)
@@ -112,17 +112,17 @@ namespace BlazorGraph
             const double margin = 1; // some space on all sides
 
             // Ensure height
-            //if (currentY - margin < 0)
-            //{
-            //    double heightIncrease = Math.Abs(currentY) + margin;
-            //    page.PageSheet.CellsU["PageHeight"].ResultIU += heightIncrease;
-            //    currentY += heightIncrease;
-            //}
+            if (currentY - margin < 0)
+            {
+                double heightIncrease = Math.Abs(currentY) + margin;
+                page.PageSheet.CellsU["PageHeight"].ResultIU += heightIncrease;
+                currentY += heightIncrease;
+            }
 
             // Ensure width
             if (currentX + 2 + margin > page.PageSheet.CellsU["PageWidth"].ResultIU)
             {
-                page.PageSheet.CellsU["PageWidth"].ResultIU = currentX + 2 + margin;
+                page.PageSheet.CellsU["PageWidth"].ResultIU = currentX + margin;
             }
         }
         private Shape GetShapeByName(Page page, string name)
