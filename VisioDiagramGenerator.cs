@@ -15,6 +15,7 @@ namespace BlazorGraph
         private double x_offset = 2.25;
 
         private HashSet<string> processedNodes = new HashSet<string>();
+        private HashSet<string> stateNodes = new HashSet<string>();
 
         public VisioDiagramGenerator(AppSettings appSettings)
         {
@@ -60,28 +61,60 @@ namespace BlazorGraph
 
             EnsurePageSize(page);
 
-            string parentName = component.Key;
+            string nodeName = component.Key;
 
-            if (processedNodes.Contains(parentName))
+            // Store original positions
+            double originalX = currentX;
+            double originalY = currentY;
+
+            // Check if the current node is a State node
+            if (nodeName.EndsWith("State") && !stateNodes.Contains(nodeName))
+            {
+                stateNodes.Add(nodeName);
+                currentY = init_y + (1.5 * y_offset);  // Two row heights above the root node row
+
+                if (stateNodes.Count > 1)
+                {
+                    currentX = x_offset * stateNodes.Count();  // Move to the right for subsequent state nodes
+                }
+                else
+                {
+                    currentX = x_offset;  // For the first state node, be one x_offset width in
+                }
+            }
+            if (processedNodes.Contains(nodeName))
                 return;  // skip nodes that have already been processed
 
-            processedNodes.Add(parentName);
+            processedNodes.Add(nodeName);
 
-            Shape parentShape = CreateShape(page, parentName);
 
-            double originalY = currentY; // remember the starting Y position
+
+            Shape parentShape = CreateShape(page, nodeName);
 
             foreach (var relatedComponent in component.Value)
             {
                 if (isRoot) // For direct descendants of a root node
                 {
-                    currentY = originalY+y_offset;
+                    currentY = originalY + y_offset;
                 }
                 else
                 {
                     currentY += y_offset * depth; // For deeper descendants
                 }
-
+                // Check if the current node is a State node
+                if (relatedComponent.EndsWith("State") && !stateNodes.Contains(nodeName))
+                {
+                    stateNodes.Add(nodeName);
+                    currentY = init_y + (1.5 * y_offset);  // Two row heights above the root node row
+                    if (stateNodes.Count > 1)
+                    {
+                        currentX = x_offset * stateNodes.Count();  // Move to the right for subsequent state nodes
+                    }
+                    else
+                    {
+                        currentX = x_offset;  // For the first state node, be one x_offset width in
+                    }
+                }
                 if (componentRelations.ContainsKey(relatedComponent))
                 {
                     var childComponentPair = new KeyValuePair<string, List<string>>(relatedComponent, componentRelations[relatedComponent]);
@@ -104,6 +137,12 @@ namespace BlazorGraph
             if (isRoot)
             {
                 currentY = originalY; // Only reset the Y position for root nodes (their siblings should be on the same level)
+            }
+
+            if (stateNodes.Contains(nodeName))
+            {
+                currentX = originalX;
+                currentY = originalY;
             }
         }
 
