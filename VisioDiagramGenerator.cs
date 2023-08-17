@@ -1,11 +1,12 @@
 ﻿using Microsoft.Office.Interop.Visio;
 using System.Runtime.InteropServices;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace BlazorGraph
 {
     public class VisioDiagramGenerator
     {
-        private const double init_y = 8.5;
+        private const double init_y = 9;
         private const double margin = 1;
         private double headerHeight = 0.5;
 
@@ -48,9 +49,6 @@ namespace BlazorGraph
             var (maxX, maxY) = GetMaxCoordinates(positionedNodes);
 
             EnsurePageSize(page, maxX, maxY);
-
-            // ... rest of the WriteToVisio method ...
-
             WriteToVisio(graphNodes, page);
 
             application.ActiveWindow.ViewFit = (short)VisWindowFit.visFitPage;
@@ -63,6 +61,7 @@ namespace BlazorGraph
             document.Close();
             application.Quit();
         }
+
         private (double maxX, double maxY) GetMaxCoordinates(List<GraphNode> graphNodes)
         {
             double maxX = 0;
@@ -79,6 +78,8 @@ namespace BlazorGraph
 
         private void WriteToVisio(List<GraphNode> graphNodes, Page page)
         {
+            List<Shape> createdShapes = new List<Shape>();
+
             var positionedNodes = GetPositionsForNodes(graphNodes);
             ConsoleWriteGrid(positionedNodes);
 
@@ -89,6 +90,7 @@ namespace BlazorGraph
                 Console.WriteLine($"Processing: {positionedNode.ComponentName} at X: {positionedNode.X}, Y: {positionedNode.Y}");
 
                 Shape currentShape = CreateShape(page, positionedNode);
+                createdShapes.Add(currentShape);
 
                 int row = (int)Math.Floor(positionedNode.Y);
                 if (!shapesByRow.ContainsKey(row))
@@ -97,9 +99,14 @@ namespace BlazorGraph
                 shapesByRow[row].Add(currentShape);
             }
 
+
             foreach (var node in graphNodes)
             {
                 Shape sourceShape = GetShapeByName(page, node.ComponentName);
+                if (sourceShape == null)
+                {
+                    Console.WriteLine($"No shape found for ComponentName: {node.ComponentName}");
+                }
                 foreach (var relatedNode in node.Children)
                 {
                     Shape targetShape = GetShapeByName(page, relatedNode.ComponentName);
@@ -107,15 +114,26 @@ namespace BlazorGraph
                 }
             }
 
-            // Group shapes by row
-            //foreach (var rowShapes in shapesByRow.Values)
-            //{
-            //    GroupShapesByRow(rowShapes, page);
-            //}
 
-            // Apply auto layout after grouping
-            //ApplyAutoLayout(page);
+            foreach (Shape shape in createdShapes)
+            {
+                shape.SendToBack();
+            }
+
+            var pageShapes = new List<Shape>();
+            foreach (Shape shape in page.Shapes)
+            {
+                pageShapes.Add(shape);
+            }
+            foreach(Shape shape in pageShapes)
+            {
+                if (shape.OneD == 1) // If it's a 1D shape like a connector
+                {
+                    shape.SendToBack();
+                }
+            }
         }
+
         private List<GraphNode> LoadGrid(Dictionary<string, List<string>> componentRelations)
         {
             List<GraphNode> graphNodes = new List<GraphNode>();
@@ -168,6 +186,7 @@ namespace BlazorGraph
 
             return graphNodes;
         }
+
         private void ConnectShapes(Shape shape1, Shape shape2, Page page)
         {
             if (shape1 == null || shape2 == null)
@@ -175,12 +194,35 @@ namespace BlazorGraph
                 Console.WriteLine($"Warning: Attempted to connect a null shape. Shape1: {shape1?.Text}, Shape2: {shape2?.Text}");
                 return;
             }
-            if(ComponentGraphProcessor.IsStateComponent(shape1.Text) || ComponentGraphProcessor.IsStateComponent(shape2.Text))
+            if (ComponentGraphProcessor.IsStateComponent(shape1.Text) || ComponentGraphProcessor.IsStateComponent(shape2.Text))
             {
                 return;
             }
+
+            // Get current count before the AutoConnect
+            int beforeConnectCount = page.Shapes.Count;
+            Documents docs = page.Application.Documents;
+            for (int i = 1; i <= docs.Count; i++)
+            {
+                Document doc = docs[i];
+                Console.WriteLine(doc.FullName);
+            }
+
+            //Document stencilDoc = page.Application.Documents.OpenEx("FLOWCHRT_U.VSSX", (short)VisOpenSaveArgs.visOpenDocked);
+            //Master connectorMaster = stencilDoc.Masters["Dynamic Connector"];
+
+            //Shape connector = page.Drop(connectorMaster, 0, 0);
+            //connector.CellsU["BeginX"].GlueTo(shape1.CellsU["PinX"]);
+            //connector.CellsU["EndX"].GlueTo(shape2.CellsU["PinX"]);
+            //return null;
+
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
+
+     
         }
+
+
+
         private Shape CreateShape(Page page, GraphNode node)
         {
             var x = node.X;
@@ -190,17 +232,39 @@ namespace BlazorGraph
             Console.WriteLine($"Creating shape for: {componentName} at X: {x}, Y: {y}");
 
             Shape header = CreateHeader(page, x, y, componentName);
-            Shape body = CreateBody(page, x, y - headerHeight);  
+            Shape body = CreateBody(page, x, y - headerHeight);
             LabelDependencies(body, node);
+            // Get or create the temporary layer
+            Layer tempLayer;
+            try
+            {
+                tempLayer = page.Layers["TempLayer"];
+            }
+            catch
+            {
+                tempLayer = page.Layers.Add("TempLayer");
+            }
 
-            // You can group the shapes into one if required
-            // Shape group = page.Group(new Shape[] { header, body });
-            return header;  // or return group if you grouped the shapes
+            // Add shapes to the temporary layer
+            tempLayer.Add(header, 0);  // 0 means do not delete shape if layer is deleted
+            tempLayer.Add(body, 0);
+
+            // Select all shapes on the temporary layer
+            var selection = page.CreateSelection(VisSelectionTypes.visSelTypeByLayer, VisSelectMode.visSelModeOnlySuper | VisSelectMode.visSelModeOnlySub, tempLayer);
+
+            // Group the selected shapes
+            var groupedShape = selection.Group();
+
+            // Remove shapes from the temporary layer (this doesn't delete the shapes)
+            tempLayer.Remove(header, 0);
+            tempLayer.Remove(body, 0);
+
+            return groupedShape;
         }
 
         private Shape CreateHeader(Page page, double x, double y, string componentName)
         {
-            Console.WriteLine($"Creating Header ({componentName}): {x} {y} {x+card_width} {y-headerHeight}");
+            Console.WriteLine($"Creating Header ({componentName}): {x} {y} {x + card_width} {y - headerHeight}");
             Shape header = page.DrawRectangle(x, y, x + card_width, y - headerHeight);  // Using headerHeight for the header
             header.Text = componentName;
 
@@ -219,6 +283,7 @@ namespace BlazorGraph
             body.CellsU["Char.Color"].FormulaU = "RGB(0, 0, 0)";  // Black text for body details
             return body;
         }
+
         private void SetShapeColor(Shape shape, string componentName)
         {
             try
@@ -270,21 +335,49 @@ namespace BlazorGraph
                 page.PageSheet.CellsU["PageWidth"].ResultIU = maxX + margin;
             }
         }
+
         private Shape GetShapeByName(Page page, string name)
         {
             foreach (Shape shape in page.Shapes)
             {
-                if (shape.Text == name)
+                Shape foundShape = SearchShapeByName(shape, name);
+                if (foundShape != null)
                 {
-                    return shape;
+                    return foundShape;
                 }
             }
             return null;
         }
+
+        private Shape SearchShapeByName(Shape shape, string name)
+        {
+            if (shape.Text == name)
+            {
+                return shape;
+            }
+
+            if (shape.Type == (short)VisShapeTypes.visTypeGroup)
+            {
+                // It's a grouped shape, so search through its contained shapes.
+                foreach (Shape subShape in shape.Shapes)
+                {
+                    Shape foundShape = SearchShapeByName(subShape, name);
+                    if (foundShape != null)
+                    {
+                        return foundShape;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+
         private List<GraphNode> GetPositionsForNodes(List<GraphNode> graphNodes)
         {
             return graphNodes.Select(node => GetPositionForNode(node)).ToList();
         }
+
         private Shape GroupShapesByRow(List<Shape> shapesInRow, Page page)
         {
             if (shapesInRow == null || !shapesInRow.Any()) return null;
@@ -298,7 +391,7 @@ namespace BlazorGraph
             // Add each shape in the list to the selection
             foreach (Shape shape in shapesInRow)
             {
-                window.Select(shape,(short)VisSelectArgs.visSelect);
+                window.Select(shape, (short)VisSelectArgs.visSelect);
             }
 
             // The active window's selection should now contain the shapes you added
@@ -312,8 +405,6 @@ namespace BlazorGraph
 
             return groupShape;
         }
-
-
 
         //private void ApplyAutoLayout(Page page)
         //{
@@ -353,7 +444,7 @@ namespace BlazorGraph
                 {
                     X = x,
                     Y = y,
-                        Children = new List<GraphNode>(node.Children),
+                    Children = new List<GraphNode>(node.Children),
                     Parents = new List<GraphNode>(node.Parents)
                 };
 
@@ -374,7 +465,5 @@ namespace BlazorGraph
                 }
             }
         }
-
-
     }
 }
