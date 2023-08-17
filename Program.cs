@@ -1,5 +1,6 @@
 ﻿using BlazorGraph;
 using Microsoft.CodeAnalysis;
+using Serilog;
 
 namespace BlazorComponentAnalyzer
 {
@@ -7,22 +8,41 @@ namespace BlazorComponentAnalyzer
     {
         static void Main(string[] args)
         {
-            var configHandler = new ConfigurationHandler(args);
-            var settings = configHandler.GetAppSettings();
+            // Set up Serilog logging
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console(new CustomConsoleFormatter())
+                .CreateLogger();
 
-            var razorFiles = GetRazorFiles(settings.Directory);
-            BlazorComponentExtractor.Configure(settings);
-            var componentRelations = BlazorComponentExtractor.ExtractComponentRelationsFromRazorFiles(razorFiles);
-            BlazorComponentExtractor.PrintComponentRelations(componentRelations);
+            try
+            {
+                var configHandler = new ConfigurationHandler(args);
+                var settings = configHandler.GetAppSettings();
 
-            var graphGenerator = new MermaidGraphGenerator(settings);
-            var graph = graphGenerator.GenerateMermaidGraph(componentRelations);
-            graphGenerator.SaveToMermaidFile(graph);
+                var razorFiles = GetRazorFiles(settings.Directory);
+                BlazorComponentExtractor.Configure(settings);
+                var componentRelations = BlazorComponentExtractor.ExtractComponentRelationsFromRazorFiles(razorFiles);
+                BlazorComponentExtractor.PrintComponentRelations(componentRelations);
 
-            var visioGenerator = new VisioDiagramGenerator(settings);
-            visioGenerator.GenerateVisioDiagram(componentRelations);
+                var graphGenerator = new MermaidGraphGenerator(settings);
+                var graph = graphGenerator.GenerateMermaidGraph(componentRelations);
+                graphGenerator.SaveToMermaidFile(graph);
 
-            Console.WriteLine("Mermaid dependency graph generated in 'blazorDependencyGraph.mmd'.");
+                var visioGenerator = new VisioDiagramGenerator(settings);
+                visioGenerator.GenerateVisioDiagram(componentRelations);
+
+                Log.Information("Mermaid dependency graph generated in 'blazorDependencyGraph.mmd'.");
+            }
+            catch (Exception ex)
+            {
+                // Log any unhandled exceptions
+                Log.Fatal(ex, "An unexpected error occurred.");
+            }
+            finally
+            {
+                // Ensure all logs are flushed before the application exits
+                Log.CloseAndFlush();
+            }
         }
 
         private static string GetCurrentSolutionDirectory()
@@ -47,14 +67,14 @@ namespace BlazorComponentAnalyzer
 
                 if (string.IsNullOrEmpty(directory))
                 {
-                    Console.WriteLine("Please provide the directory path where the .razor files are located:");
+                    Log.Verbose("Please provide the directory path where the .razor files are located:");
                     directory = Console.ReadLine();
                 }
             }
 
             if (!Directory.Exists(directory))
             {
-                Console.WriteLine($"Directory '{directory}' does not exist.");
+                Log.Verbose($"Directory '{directory}' does not exist.");
                 return Enumerable.Empty<string>();
             }
 
@@ -62,11 +82,11 @@ namespace BlazorComponentAnalyzer
 
             if (!razorFiles.Any())
             {
-                Console.WriteLine("No .razor files found.");
+                Log.Verbose("No .razor files found.");
                 return Enumerable.Empty<string>();
             }
 
-            Console.WriteLine($"Found {razorFiles.Length} .razor file(s) in the directory.");
+            Log.Verbose($"Found {razorFiles.Length} .razor file(s) in the directory.");
 
             return razorFiles;
         }

@@ -11,6 +11,8 @@
         public string Directory { get; set; }
         public string StartingNode { get; set; }
         public string MermaidFileName { get; set; } = "dependencyGraph.mmd";
-        public string VisioFileName { get; set; } = "dependencyGraph.vsd";
+        public string VisioFileName { get; set; } = "dependencyGraph.vsd"; 
+        public VisioDiagramConfig VisioConfig { get; set; } = new VisioDiagramConfig();
+
     }
 }

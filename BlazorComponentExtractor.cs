@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,7 +53,7 @@ namespace BlazorGraph
             {
                 string line = $"{relation.Key} -> {string.Join(", ", relation.Value)}";
                 contentBuilder.AppendLine(line);
-                Console.WriteLine(line);
+                Log.Verbose(line);
             }
 
             var outputFilePath = _appSettings?.OutputFilePath ?? "componentRelations.txt";

@@ -1,4 +1,6 @@
-﻿namespace BlazorGraph
+﻿using Serilog;
+
+namespace BlazorGraph
 {
     public static class ComponentGraphProcessor
     {
@@ -173,13 +175,13 @@
             // Helper function to print border
             void PrintBorder()
             {
-                Console.Write('+');
+                Log.Verbose("+",true);
                 foreach (var width in columnWidths)
                 {
-                    Console.Write(new string('-', width + 2)); // +2 for space padding on both sides
-                    Console.Write('+');
+                    Log.Verbose(new string('-', width + 2),true); // +2 for space padding on both sides
+                    Log.Verbose("+",true);
                 }
-                Console.WriteLine();
+                Log.Verbose(System.Environment.NewLine);
             }
 
             // 2. Print the top border.
@@ -189,7 +191,7 @@
             var rowIndex = 0;
             foreach (var row in grid)
             {
-                Console.Write($"row: [{rowIndex++}]");
+                Log.Verbose($"row: [{rowIndex++}]",true);
                 for (int col = 0; col < columnCount; col++)
                 {
                     if (col < row.Count)
@@ -197,17 +199,17 @@
                         string cellContent = row[col];
                         int padding = (columnWidths[col] - cellContent.Length) / 2;
                         int extraPadding = (columnWidths[col] - cellContent.Length) % 2;
-                        Console.Write(new string(' ', padding + 1)); // +1 for space padding
-                        Console.Write($"[{col}] {cellContent}");
-                        Console.Write(new string(' ', padding + 1 + extraPadding)); // +1 for space padding
+                        Log.Verbose(new string(' ', padding + 1), true); // +1 for space padding
+                        Log.Verbose($"[{col}] {cellContent}, true");
+                        Log.Verbose(new string(' ', padding + 1 + extraPadding), true); // +1 for space padding
                     }
                     else
                     {
                         // In case some rows have fewer columns than others, fill with spaces
-                        Console.Write(new string(' ', columnWidths[col] + 2)); // +2 for space padding on both sides
+                        Log.Verbose(new string(' ', columnWidths[col] + 2), true); // +2 for space padding on both sides
                     }
                 }
-                Console.WriteLine();
+                Log.Verbose(Environment.NewLine);
             }
 
             // 4. Print the bottom border.
