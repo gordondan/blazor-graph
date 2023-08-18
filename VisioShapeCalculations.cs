@@ -17,10 +17,14 @@ namespace BlazorGraph
             var y = node.Y;
             var componentName = node.ComponentName;
 
-            Log.Verbose($"Creating shape for: {componentName} at X: {x}, Y: {y}");
+            Log.Debug($"Creating shape for: {componentName} at X: {x}, Y: {y}");
 
+            Log.Debug($"Creating a header for component '{componentName}' at position X: {x}, Y: {y}. Card Height: {cardHeight}");
             Shape header = CreateHeader(page, x, y, componentName);
+
+            Log.Debug($"Creating a body for component '{componentName}' directly below the header at position X: {x}, Y: {y - headerHeight}.");
             Shape body = CreateBody(page, x, y - headerHeight);
+
             LabelDependencies(body, node);
             // Get or create the temporary layer
             Layer tempLayer;
@@ -65,8 +69,8 @@ namespace BlazorGraph
 
         private Shape CreateBody(Page page, double x, double y)
         {
-            Log.Verbose($"Creating Body {x} {y} {x + cardWidth} {y - cardHeight}");
-            Shape body = page.DrawRectangle(x, y, x + cardWidth, y - cardHeight);
+            Log.Debug($"Creating Body {x} {y} {x + cardWidth} {y - cardHeight + headerHeight}");
+            Shape body = page.DrawRectangle(x, y, x + cardWidth, y - cardHeight + headerHeight);
             body.CellsU["FillForegnd"].FormulaU = "RGB(255, 255, 255)"; // White body
             body.CellsU["Char.Color"].FormulaU = "RGB(0, 0, 0)";  // Black text for body details
             return body;
@@ -151,7 +155,7 @@ namespace BlazorGraph
         private GraphNode ShiftAndLog(GraphNode node, double xShift, double yShift)
         {
             var shiftedNode = node with { X = xShift + node.X, Y = yShift + node.Y };
-            Log.Debug($"Original X: {node.X}, Original Y: {node.Y}, Shifted X: {shiftedNode.X} ({xShift}), Shifted Y: {shiftedNode.Y} ({yShift})");
+            Log.Verbose($"Original X: {node.X}, Original Y: {node.Y}, Shifted X: {shiftedNode.X} ({xShift}), Shifted Y: {shiftedNode.Y} ({yShift})");
             return shiftedNode;
         }
 
