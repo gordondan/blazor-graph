@@ -17,12 +17,12 @@ namespace BlazorGraph
             var y = node.Y;
             var componentName = node.ComponentName;
 
-            Log.Debug($"Creating shape for: {componentName} at X: {x}, Y: {y}");
+            Log.Verbose($"Creating shape for: {componentName} at X: {x}, Y: {y}");
 
-            Log.Debug($"Creating a header for component '{componentName}' at position X: {x}, Y: {y}. Card Height: {cardHeight}");
+            Log.Verbose($"Creating a header for component '{componentName}' at position X: {x}, Y: {y}. Card Height: {cardHeight}");
             Shape header = CreateHeader(page, x, y, componentName);
 
-            Log.Debug($"Creating a body for component '{componentName}' directly below the header at position X: {x}, Y: {y - headerHeight}.");
+            Log.Verbose($"Creating a body for component '{componentName}' directly below the header at position X: {x}, Y: {y - headerHeight}.");
             Shape body = CreateBody(page, x, y - headerHeight);
 
             LabelDependencies(body, node);
@@ -69,7 +69,7 @@ namespace BlazorGraph
 
         private Shape CreateBody(Page page, double x, double y)
         {
-            Log.Debug($"Creating Body {x} {y} {x + cardWidth} {y - cardHeight + headerHeight}");
+            Log.Verbose($"Creating Body {x} {y} {x + cardWidth} {y - cardHeight + headerHeight}");
             Shape body = page.DrawRectangle(x, y, x + cardWidth, y - cardHeight + headerHeight);
             body.CellsU["FillForegnd"].FormulaU = "RGB(255, 255, 255)"; // White body
             body.CellsU["Char.Color"].FormulaU = "RGB(0, 0, 0)";  // Black text for body details
@@ -115,18 +115,31 @@ namespace BlazorGraph
 
         private void EnsurePageSize(Page page, double maxX, double maxY)
         {
+            Log.Debug($"Ensuring page size. Max X value: {maxX}, Max Y value: {maxY}");
+
             // Ensure height
             if (maxY + verticalPageMargin > page.PageSheet.CellsU["PageHeight"].ResultIU)
             {
+                Log.Debug($"Adjusting page height. Old height: {page.PageSheet.CellsU["PageHeight"].ResultIU}, New height: {maxY + verticalPageMargin}");
                 page.PageSheet.CellsU["PageHeight"].ResultIU = maxY + verticalPageMargin;
+            }
+            else
+            {
+                Log.Debug($"No adjustment needed for page height. Current height: {page.PageSheet.CellsU["PageHeight"].ResultIU}, Max Y value + margin: {maxY + verticalPageMargin}");
             }
 
             // Ensure width
             if (maxX + horizontalPageMargin > page.PageSheet.CellsU["PageWidth"].ResultIU)
             {
+                Log.Debug($"Adjusting page width. Old width: {page.PageSheet.CellsU["PageWidth"].ResultIU}, New width: {maxX + horizontalPageMargin}");
                 page.PageSheet.CellsU["PageWidth"].ResultIU = maxX + horizontalPageMargin;
             }
+            else
+            {
+                Log.Debug($"No adjustment needed for page width. Current width: {page.PageSheet.CellsU["PageWidth"].ResultIU}, Max X value + margin: {maxX + horizontalPageMargin}");
+            }
         }
+
 
 
 

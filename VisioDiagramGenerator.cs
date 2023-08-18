@@ -69,7 +69,7 @@ namespace BlazorGraph
 
             pageSheet.get_CellsU("PageWidth").ResultIU = pageWidth;
             pageSheet.get_CellsU("PageHeight").ResultIU = pageHeight;
-            EnsurePageSize(page, maxX, maxY);
+            EnsurePageSize(page, maxX+horizontalPageMargin, maxY+verticalPageMargin+init_y);
 
             WriteToVisio(positionedNodes, page);
 
