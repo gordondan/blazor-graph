@@ -4,18 +4,33 @@ using Serilog;
 
 namespace BlazorComponentAnalyzer
 {
-    class Program
+    internal class Program
     {
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
+            DeleteLogFiles();
+
             // Set up Serilog logging
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
+                .Enrich.WithProperty("Timestamp", DateTime.UtcNow)
                 .WriteTo.Console(new CustomConsoleFormatter())
+                .WriteTo.File(new CustomFileFormatter(),
+                    "log.txt",
+                    rollingInterval: RollingInterval.Day,
+                    rollOnFileSizeLimit: true,
+                    shared: true,
+                    retainedFileCountLimit: 10)
                 .CreateLogger();
 
             try
             {
+                // Get the MST/MDT time zone
+                TimeZoneInfo mstTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Mountain Standard Time");
+                // Convert UTC to MST/MDT
+                DateTime localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, mstTimeZone);
+                Log.Verbose($"Starting Blazor Graph {localTime.ToLongDateString()} {localTime.ToLongTimeString()}", true);
+
                 var configHandler = new ConfigurationHandler(args);
                 var settings = configHandler.GetAppSettings();
 
@@ -57,6 +72,7 @@ namespace BlazorComponentAnalyzer
 
             return null;
         }
+
         private static IEnumerable<string> GetRazorFiles(string inputDirectory)
         {
             string directory = inputDirectory;
@@ -91,5 +107,26 @@ namespace BlazorComponentAnalyzer
             return razorFiles;
         }
 
+        /// <summary>
+        /// Deletes files with the word "log" in the name and ending in .txt from the current directory.
+        /// </summary>
+        private static void DeleteLogFiles()
+        {
+            var currentDirectory = Directory.GetCurrentDirectory();
+            var logFiles = Directory.GetFiles(currentDirectory, "*log*.txt");
+
+            foreach (var logFile in logFiles)
+            {
+                try
+                {
+                    File.Delete(logFile);
+                    Log.Information($"Deleted log file: {logFile}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, $"Failed to delete log file: {logFile}");
+                }
+            }
+        }
     }
 }

@@ -1,10 +1,10 @@
 ﻿using Microsoft.Office.Interop.Visio;
 using Serilog;
-using System.Runtime.InteropServices;
+using System.Text;
 
 namespace BlazorGraph
 {
-    public class VisioDiagramGenerator
+    public partial class VisioDiagramGenerator
     {
         private AppSettings _appSettings;
         private List<List<string>> _grid = new List<List<string>>();
@@ -15,12 +15,14 @@ namespace BlazorGraph
 
         private double init_y => _appSettings.VisioConfig.InitY;
         private double headerHeight => _appSettings.VisioConfig.HeaderHeight;
-        private double x_offset => _appSettings.VisioConfig.HorizontalPageOffset; 
-        private double y_offset => _appSettings.VisioConfig.VerticalPageOffset;  
+        private double x_offset => _appSettings.VisioConfig.HorizontalPageOffset;
+        private double y_offset => _appSettings.VisioConfig.VerticalPageOffset;
         private int cardsPerRow => _appSettings.VisioConfig.CardsPerRow;
         private int rowsPerPage => _appSettings.VisioConfig.RowsPerPage;
         private double pageWidth => _appSettings.VisioConfig.PageWidth;
         private double pageHeight => _appSettings.VisioConfig.PageHeight;
+        private double effectivePageWidth => _appSettings.VisioConfig.EffectivePageWidth;
+        private double effectivePageHeight => _appSettings.VisioConfig.EffectivePageHeight;
         private double horizontalPageMargin => _appSettings.VisioConfig.HorizontalPageMargin;
         private double verticalPageMargin => _appSettings.VisioConfig.VerticalPageMargin;
         private double horizontalMargin => _appSettings.VisioConfig.HorizontalMargin;
@@ -34,7 +36,6 @@ namespace BlazorGraph
         private double horizontalPageOffset => _appSettings.VisioConfig.HorizontalPageOffset;
         private double verticalPageOffset => _appSettings.VisioConfig.VerticalPageOffset;
 
-
         public VisioDiagramGenerator(AppSettings appSettings)
         {
             _appSettings = appSettings;
@@ -44,23 +45,33 @@ namespace BlazorGraph
 
         public void GenerateVisioDiagram(Dictionary<string, List<string>> componentRelations)
         {
+            LogConfigurationValues();
+
+            List<GraphNode> graphNodes = LoadGrid(componentRelations);         
+
+            var positionedNodes = GetPositionsForNodes(graphNodes);
+            var (maxX, maxY) = GetMaxCoordinates(positionedNodes);
+            var (minX, minY) = GetMinCoordinates(positionedNodes);
+            
+            Log.Verbose("*******************************************************");
+            positionedNodes = ShiftNodesRightAndUp(positionedNodes, minX - horizontalPageMargin, Math.Abs(minY));
+            Log.Verbose("-------------------------------------------------------");
+            
+            (maxX, maxY) = GetMaxCoordinates(positionedNodes);
+            (minX, minY) = GetMinCoordinates(positionedNodes);
+
+
             var application = new Microsoft.Office.Interop.Visio.Application();
             application.Visible = true;
             var document = application.Documents.Add("");
             var page = application.ActivePage;
-            if (page.PageSheet.CellsU["PageWidth"].ResultIU < page.PageSheet.CellsU["PageHeight"].ResultIU)
-            {
-                double temp = page.PageSheet.CellsU["PageWidth"].ResultIU;
-                page.PageSheet.CellsU["PageWidth"].ResultIU = page.PageSheet.CellsU["PageHeight"].ResultIU;
-                page.PageSheet.CellsU["PageHeight"].ResultIU = temp;
-            }
+            var pageSheet = page.PageSheet;
 
-            List<GraphNode> graphNodes = LoadGrid(componentRelations);
-            var positionedNodes = GetPositionsForNodes(graphNodes);
-            var (maxX, maxY) = GetMaxCoordinates(positionedNodes);
-
+            pageSheet.get_CellsU("PageWidth").ResultIU = pageWidth;
+            pageSheet.get_CellsU("PageHeight").ResultIU = pageHeight;
             EnsurePageSize(page, maxX, maxY);
-            WriteToVisio(graphNodes, page);
+
+            WriteToVisio(positionedNodes, page);
 
             application.ActiveWindow.ViewFit = (short)VisWindowFit.visFitPage;
             application.ActiveWindow.Zoom = 1;  // Sets zoom to 100%
@@ -87,11 +98,24 @@ namespace BlazorGraph
             return (maxX, maxY);
         }
 
-        private void WriteToVisio(List<GraphNode> graphNodes, Page page)
+        private (double maxX, double maxY) GetMinCoordinates(List<GraphNode> graphNodes)
+        {
+            double minX = 100000000;
+            double minY = 100000000;
+
+            foreach (var node in graphNodes)
+            {
+                if (node.X < minX) minX = node.X;
+                if (node.Y < minY) minY = node.Y;
+            }
+
+            return (minX, minY);
+        }
+
+        private void WriteToVisio(List<GraphNode> positionedNodes, Page page)
         {
             List<Shape> createdShapes = new List<Shape>();
 
-            var positionedNodes = GetPositionsForNodes(graphNodes);
             ConsoleWriteGrid(positionedNodes);
 
             Dictionary<int, List<Shape>> shapesByRow = new Dictionary<int, List<Shape>>();
@@ -178,6 +202,19 @@ namespace BlazorGraph
             return graphNodes;
         }
 
+        private Shape GetShapeByName(Page page, string name)
+        {
+            foreach (Shape shape in page.Shapes)
+            {
+                Shape foundShape = SearchShapeByName(shape, name);
+                if (foundShape != null)
+                {
+                    return foundShape;
+                }
+            }
+            return null;
+        }
+
         private void ConnectShapes(Shape shape1, Shape shape2, Page page)
         {
             if (shape1 == null || shape2 == null)
@@ -202,273 +239,75 @@ namespace BlazorGraph
             shape1.AutoConnect(shape2, VisAutoConnectDir.visAutoConnectDirNone);
         }
 
-        private Shape CreateShape(Page page, GraphNode node)
+        public static void LogGrid(Dictionary<string, List<string>> grid)
         {
-            var x = node.X;
-            var y = node.Y;
-            var componentName = node.ComponentName;
-
-            Log.Verbose($"Creating shape for: {componentName} at X: {x}, Y: {y}");
-
-            Shape header = CreateHeader(page, x, y, componentName);
-            Shape body = CreateBody(page, x, y - headerHeight);
-            LabelDependencies(body, node);
-            // Get or create the temporary layer
-            Layer tempLayer;
-            try
+            if (grid == null || grid.Count == 0)
             {
-                tempLayer = page.Layers["TempLayer"];
-            }
-            catch
-            {
-                tempLayer = page.Layers.Add("TempLayer");
+                Log.Verbose("The grid is empty.");
+                return;
             }
 
-            // Add shapes to the temporary layer
-            tempLayer.Add(header, 0);  // 0 means do not delete shape if layer is deleted
-            tempLayer.Add(body, 0);
-
-            // Select all shapes on the temporary layer
-            var selection = page.CreateSelection(VisSelectionTypes.visSelTypeByLayer, VisSelectMode.visSelModeOnlySuper | VisSelectMode.visSelModeOnlySub, tempLayer);
-
-            // Group the selected shapes
-            var groupedShape = selection.Group();
-
-            // Remove shapes from the temporary layer (this doesn't delete the shapes)
-            tempLayer.Remove(header, 0);
-            tempLayer.Remove(body, 0);
-
-            return groupedShape;
-        }
-
-        private Shape CreateHeader(Page page, double x, double y, string componentName)
-        {
-            Log.Verbose($"Creating Header ({componentName}): {x} {y} {x + cardWidth} {y - headerHeight}");
-            Shape header = page.DrawRectangle(x, y, x + cardWidth, y - headerHeight);  // Using headerHeight for the header
-            header.Text = componentName;
-
-            // Setting shape rounding for rounded rectangle
-            //header.CellsU["Rounding"].ResultIU = 0.1;
-
-            SetShapeColor(header, componentName);
-            return header;
-        }
-
-        private Shape CreateBody(Page page, double x, double y)
-        {
-            Log.Verbose($"Creating Body {x} {y} {x + cardWidth} {y - cardHeight}");
-            Shape body = page.DrawRectangle(x, y, x + cardWidth, y - cardHeight);
-            body.CellsU["FillForegnd"].FormulaU = "RGB(255, 255, 255)"; // White body
-            body.CellsU["Char.Color"].FormulaU = "RGB(0, 0, 0)";  // Black text for body details
-            return body;
-        }
-
-        private void SetShapeColor(Shape shape, string componentName)
-        {
-            try
+            foreach (var entry in grid)
             {
-                if (ComponentGraphProcessor.IsVendorComponent(componentName))
+                Log.Verbose($"Key: {entry.Key}");
+                Log.Verbose("Values:");
+                foreach (var value in entry.Value)
                 {
-                    shape.CellsU["FillForegnd"].FormulaU = "RGB(50, 205, 50)";  // Lime green
-                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
+                    Log.Verbose($"- {value}");
                 }
-                else if (ComponentGraphProcessor.IsStateComponent(componentName))
+                Log.Verbose("");  // Empty line for better separation between entries
+            }
+        }
+        public static void LogGraphNodes(List<GraphNode> nodes)
+        {
+            if (nodes == null || !nodes.Any())
+            {
+                Log.Verbose("The list of nodes is empty.");
+                return;
+            }
+
+            foreach (var node in nodes)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine($"ComponentName: {node.ComponentName}");
+                sb.AppendLine($"Position - X: {node.X}, Y: {node.Y}");
+                sb.AppendLine("Parents:");
+                foreach (var parent in node.Parents)
                 {
-                    shape.CellsU["FillForegnd"].FormulaU = "RGB(255, 165, 0)";  // Orange
-                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
+                    sb.AppendLine($"- {parent.ComponentName}");
                 }
-                else
+                sb.AppendLine("Children:");
+                foreach (var child in node.Children)
                 {
-                    shape.CellsU["FillForegnd"].FormulaU = "RGB(0, 0, 128)"; // Default navy blue
-                    shape.CellsU["Char.Color"].FormulaU = "RGB(255, 255, 255)";  // White text
+                    sb.AppendLine($"- {child.ComponentName}");
                 }
-            }
-            catch (COMException ex)
-            {
-                // Handle the error, perhaps logging it or notifying the user
-                Log.Verbose($"Error setting color for component {componentName}: {ex.Message}");
+                Log.Verbose(sb.ToString());
             }
         }
-
-        private void LabelDependencies(Shape body, GraphNode node)
+        private void LogConfigurationValues()
         {
-            int stateDeps = node.Children.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count();
-            stateDeps += node.Parents.Where(x => ComponentGraphProcessor.IsStateComponent(x.ComponentName)).Count(); ;
-            int outgoingDeps = node.Children.Count();
-            int incomingDeps = node.Parents.Count();
-
-            body.Text = $"State Dep: {stateDeps}\nOutgoing: {outgoingDeps}\nIncoming: {incomingDeps}";
-        }
-
-        private void EnsurePageSize(Page page, double maxX, double maxY)
-        {
-            // Ensure height
-            if (maxY + verticalPageMargin > page.PageSheet.CellsU["PageHeight"].ResultIU)
-            {
-                page.PageSheet.CellsU["PageHeight"].ResultIU = maxY + verticalPageMargin;
-            }
-
-            // Ensure width
-            if (maxX + horizontalPageMargin > page.PageSheet.CellsU["PageWidth"].ResultIU)
-            {
-                page.PageSheet.CellsU["PageWidth"].ResultIU = maxX + horizontalPageMargin;
-            }
-        }
-
-        private Shape GetShapeByName(Page page, string name)
-        {
-            foreach (Shape shape in page.Shapes)
-            {
-                Shape foundShape = SearchShapeByName(shape, name);
-                if (foundShape != null)
-                {
-                    return foundShape;
-                }
-            }
-            return null;
-        }
-
-        private Shape SearchShapeByName(Shape shape, string name)
-        {
-            if (shape.Text == name)
-            {
-                return shape;
-            }
-
-            if (shape.Type == (short)VisShapeTypes.visTypeGroup)
-            {
-                // It's a grouped shape, so search through its contained shapes.
-                foreach (Shape subShape in shape.Shapes)
-                {
-                    Shape foundShape = SearchShapeByName(subShape, name);
-                    if (foundShape != null)
-                    {
-                        return foundShape;
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private List<GraphNode> GetPositionsForNodes(List<GraphNode> graphNodes)
-        {
-            return graphNodes.Select(node => GetPositionForNode(node, _grid)).ToList();
-        }
-
-        private GraphNode GetPositionForNode(GraphNode node, List<List<string>> nodeGrid)
-        {
-            var (rowIndex, columnIndex) = FindNodeInGrid(node, nodeGrid);
-
-            if (rowIndex != -1 && columnIndex != -1)
-            {
-                double x = CalculateXPosition(columnIndex);
-                if (x + cardWidth > pageWidth)
-                {
-                    x += horizontalPageOffset;
-                    rowIndex += 1;  // moving to the next row as it's a new page now
-                }
-
-
-                double y = CalculateYPosition(rowIndex);
-
-                // Create a new node and return it.
-                GraphNode newNode = new GraphNode(node.ComponentName)
-                {
-                    X = x,
-                    Y = y,
-                    Children = new List<GraphNode>(node.Children),
-                    Parents = new List<GraphNode>(node.Parents)
-                };
-
-                return newNode;
-            }
-
-            return node;  // If there's no change in the position, return the original node.
-        }
-
-        private (int rowIndex, int columnIndex) FindNodeInGrid(GraphNode node, List<List<string>> nodeGrid)
-        {
-            for (int i = 0; i < nodeGrid.Count; i++)
-            {
-                int columnIndex = nodeGrid[i].IndexOf(node.ComponentName);
-                if (columnIndex != -1)
-                {
-                    return (i, columnIndex);
-                }
-            }
-            return (-1, -1);
-        }
-
-        private double CalculateXPosition(int columnIndex)
-        {
-            // Calculate initial X position within the page without considering page transitions.
-            double x = columnIndex * (cardWidth + horizontalMargin);
-
-            // Determine the horizontal page number.
-            int horizontalPageNumber = columnIndex / cardsPerRow;
-
-            // Adjust the X position for the nodes on subsequent pages.
-            x -= horizontalPageNumber * cardsPerRow * (cardWidth + horizontalMargin);
-
-            // Adjust the position to start from the left margin of the correct page.
-            x += horizontalPageMargin + (horizontalPageNumber * availableDrawingWidth);
-
-            return x;
-        }
-
-
-
-        private double CalculateYPosition(int rowIndex)
-        {
-            int verticalPageNumber = rowIndex / rowsPerPage; // Gives vertical page (top to bottom)
-            int localRowIndex = rowIndex % rowsPerPage; // Position within the current vertical page
-
-            double y = init_y
-                       - localRowIndex * (cardHeight + verticalMargin)
-                       - verticalPageNumber * (rowsPerPage * (cardHeight + verticalMargin) + verticalPageMargin);
-
-            return y;
-        }
-
-        private Shape GroupShapesByRow(List<Shape> shapesInRow, Page page)
-        {
-            if (shapesInRow == null || !shapesInRow.Any()) return null;
-
-            // Get the active window
-            Window window = page.Application.ActiveWindow;
-
-            // Clear current selection
-            window.DeselectAll();
-
-            // Add each shape in the list to the selection
-            foreach (Shape shape in shapesInRow)
-            {
-                window.Select(shape, (short)VisSelectArgs.visSelect);
-            }
-
-            // The active window's selection should now contain the shapes you added
-            Selection selection = window.Selection;
-
-            // Check if there's any selected shape before grouping
-            if (selection.Count == 0) return null;
-
-            // Group the selection
-            Shape groupShape = selection.Group();
-
-            return groupShape;
-        }
-
-        private void ConsoleWriteGrid(List<GraphNode> graphNodes)
-        {
-            foreach (var node in graphNodes)
-            {
-                Log.Verbose($"Node: {node.ComponentName}, X: {node.X}, Y: {node.Y}");
-                foreach (var related in node.Children)
-                {
-                    Log.Verbose($"\tRelated: {related.ComponentName}");
-                }
-            }
+            Log.Verbose("Logging Visio Configuration Values:");
+            Log.Verbose("init_y: {InitY}", init_y);
+            Log.Verbose("headerHeight: {HeaderHeight}", headerHeight);
+            Log.Verbose("x_offset: {XOffset}", x_offset);
+            Log.Verbose("y_offset: {YOffset}", y_offset);
+            Log.Verbose("cardsPerRow: {CardsPerRow}", cardsPerRow);
+            Log.Verbose("rowsPerPage: {RowsPerPage}", rowsPerPage);
+            Log.Verbose("pageWidth: {PageWidth}", pageWidth);
+            Log.Verbose("pageHeight: {PageHeight}", pageHeight);
+            Log.Verbose("horizontalPageMargin: {HorizontalPageMargin}", horizontalPageMargin);
+            Log.Verbose("verticalPageMargin: {VerticalPageMargin}", verticalPageMargin);
+            Log.Verbose("horizontalMargin: {HorizontalMargin}", horizontalMargin);
+            Log.Verbose("verticalMargin: {VerticalMargin}", verticalMargin);
+            Log.Verbose("availableDrawingWidth: {AvailableDrawingWidth}", availableDrawingWidth);
+            Log.Verbose("availableDrawingHeight: {AvailableDrawingHeight}", availableDrawingHeight);
+            Log.Verbose("maxCardWidth: {MaxCardWidth}", maxCardWidth);
+            Log.Verbose("maxCardHeight: {MaxCardHeight}", maxCardHeight);
+            Log.Verbose("cardWidth: {CardWidth}", cardWidth);
+            Log.Verbose("cardHeight: {CardHeight}", cardHeight);
+            Log.Verbose("horizontalPageOffset: {HorizontalPageOffset}", horizontalPageOffset);
+            Log.Verbose("verticalPageOffset: {VerticalPageOffset}", verticalPageOffset);
+            Log.Verbose(Environment.NewLine);
         }
     }
 }

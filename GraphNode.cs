@@ -2,7 +2,7 @@
 
 namespace BlazorGraph
 {
-    public class GraphNode
+    public record GraphNode
     {
         public string ComponentName { get; set; }
 
